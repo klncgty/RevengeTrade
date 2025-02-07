@@ -70,7 +70,7 @@ bot = BinanceTradeExecutor(api_key, api_secret)
 bot.execute_trade_cycle()
 ```
 
-# Console Output
+## Console Output
 The bot provides real-time market updates with color-coded information:
 
 🟢 Green: Positive conditions/profits
@@ -78,7 +78,7 @@ The bot provides real-time market updates with color-coded information:
 🟡 Yellow: Warnings and notifications
 🔵 Cyan: Status updates
 
-# Logging
+## Logging
 Trade history is logged to CSV files
 Performance metrics are tracked
 Error logging for debugging
@@ -88,9 +88,9 @@ Connection retry mechanism
 Balance verification before trades
 Minimum/maximum position size limits
 
-!! Disclaimer
+# !! Disclaimer
 This bot is for educational purposes only. Cryptocurrency trading carries significant risks. Always test thoroughly with small amounts before live trading.
 
-License
+# License
 MIT License - See LICENSE file for details
 
