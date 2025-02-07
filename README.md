@@ -1,5 +1,8 @@
 # Cryptocurrency Trading Bot
 
+> under development... to be updated...
+
+
 ## Overview
 An automated trading bot for cryptocurrency markets using Binance API. The bot implements a trend-following strategy with multiple technical indicators and dynamic risk management.
 
