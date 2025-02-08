@@ -4,7 +4,6 @@
 
 
 ![Ekran görüntüsü 2025-02-08 142204](https://github.com/user-attachments/assets/1a6e0c35-6965-4af4-99b5-69acfe51501f)
-![Ekran görüntüsü 2025-02-08 142155](https://github.com/user-attachments/assets/083112bf-8c4e-4af1-b727-d8d5d9cbb0b4)
 
 ## Overview
 An automated trading bot for cryptocurrency markets using Binance API. The bot implements a trend-following strategy with multiple technical indicators and dynamic risk management.
