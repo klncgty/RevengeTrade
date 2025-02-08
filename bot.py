@@ -41,8 +41,7 @@ logging.basicConfig(
 class BinanceTradeExecutor:
     def __init__(self, api_key, api_secret):
         self.client = Client(api_key, api_secret,testnet=False,requests_params={
-                'timeout': 30,  
-                'retries': 3     
+                'timeout': 30 
             })
         self.strategy = TrendStrategy()
         self.logger = TradeLogger()
