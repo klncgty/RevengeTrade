@@ -40,7 +40,10 @@ logging.basicConfig(
 )
 class BinanceTradeExecutor:
     def __init__(self, api_key, api_secret):
-        self.client = Client(api_key, api_secret,testnet=False)
+        self.client = Client(api_key, api_secret,testnet=False,requests_params={
+                'timeout': 30,  
+                'retries': 3     
+            })
         self.strategy = TrendStrategy()
         self.logger = TradeLogger()
         self.performance_tracker = PerformanceTracker()
@@ -104,13 +107,13 @@ class BinanceTradeExecutor:
         else:
             # Aktif pozisyon yoksa alım koşullarını göster
             print("\nBuy Conditions Status:")
-            rsi_check = data['rsi'].iloc[-1] < 50  # RSI eşiğini 50 yaptık
+            rsi_check = data['rsi'].iloc[-1] < 55  # RSI eşiğini 50 yaptık
             macd_check = data['macd'].iloc[-1] > data['macd_signal'].iloc[-1]
             ema_check = (data['close'].iloc[-1] > data['ema_50'].iloc[-1] or 
                         data['close'].iloc[-1] > data['ema_200'].iloc[-1])
             volume_check = data['volume_spike'].iloc[-1]
             
-            print(f"1. RSI < 50: {Fore.GREEN if rsi_check else Fore.RED}✓ (Current: {data['rsi'].iloc[-1]:.2f}){Style.RESET_ALL}")
+            print(f"1. RSI < 55: {Fore.GREEN if rsi_check else Fore.RED}✓ (Current: {data['rsi'].iloc[-1]:.2f}){Style.RESET_ALL}")
             print(f"2. MACD Analysis: {Fore.GREEN if (macd_momentum or volume_spike) else Fore.RED}✓ "
                                     f"(Momentum: {macd_momentum}, Volume: {volume_spike}){Style.RESET_ALL}")
             print(f"3. EMA Conditions: {Fore.GREEN if ema_conditions else Fore.RED}✓ "
@@ -140,35 +143,42 @@ class BinanceTradeExecutor:
         print("*"*50 + "\n")
     def get_historical_data(self, symbol=Config.SYMBOL, interval=Config.TIMEFRAME, lookback="500"):
         """Fetch historical klines/candlestick data"""
-        try:
-            symbol = symbol + "USDT"
-            print(f"{Fore.YELLOW}Fetching market data for {symbol}...{Style.RESET_ALL}")
+        max_retries = 3
+        retry_delay = 5  # saniye
+        for attempt in range(max_retries):
+            try:
+                symbol = symbol + "USDT"
+                print(f"{Fore.YELLOW}Fetching market data for {symbol}...{Style.RESET_ALL}")
 
-            klines = self.client.get_klines(
-                symbol=symbol,
-                interval=interval,
-                limit=lookback
-            )
-            
-            df = pd.DataFrame(klines, columns=[
-                'timestamp', 'open', 'high', 'low', 'close', 'volume',
-                'close_time', 'quote_volume', 'trades', 'taker_buy_base',
-                'taker_buy_quote', 'ignored'
-            ])
-            
-            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-            for col in ['open', 'high', 'low', 'close', 'volume']:
-                df[col] = pd.to_numeric(df[col], errors='coerce')
+                klines = self.client.get_klines(
+                    symbol=symbol,
+                    interval=interval,
+                    limit=lookback
+                )
                 
-            current_price = df['close'].iloc[-1]
-            print(f"{Fore.GREEN}Market data fetched successfully{Style.RESET_ALL} --- Current {symbol} Price: {Fore.YELLOW}{current_price:.8f}{Style.RESET_ALL}")
+                df = pd.DataFrame(klines, columns=[
+                    'timestamp', 'open', 'high', 'low', 'close', 'volume',
+                    'close_time', 'quote_volume', 'trades', 'taker_buy_base',
+                    'taker_buy_quote', 'ignored'
+                ])
+                
+                df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+                for col in ['open', 'high', 'low', 'close', 'volume']:
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
+                    
+                current_price = df['close'].iloc[-1]
+                print(f"{Fore.GREEN}Market data fetched successfully{Style.RESET_ALL} --- Current {symbol} Price: {Fore.YELLOW}{current_price:.8f}{Style.RESET_ALL}")
 
-            return df
-        except BinanceAPIException as e:
-            print(f"{Fore.RED}Error fetching historical data: {e}{Style.RESET_ALL}")
-
-            logging.error(f"Error fetching historical data: {e}")
-            return None
+                return df
+            except BinanceAPIException as e:
+                print(f"{Fore.RED}Binance API Error (Attempt {attempt + 1}/{max_retries}): {e}{Style.RESET_ALL}")
+                if attempt < max_retries - 1:
+                    print(f"{Fore.YELLOW}Retrying in {retry_delay} seconds...{Style.RESET_ALL}")
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                else:
+                    logging.error(f"Failed to fetch data after {max_retries} attempts: {e}")
+                    return None
 
     def calculate_position_size(self, entry_price, stop_loss):
         """
@@ -397,6 +407,17 @@ class BinanceTradeExecutor:
                         print(f"Stop Loss: {stop_loss:.8f}")
                         print(f"Take Profit: {take_profit:.8f}")
                 
+                # Updated countdown display for 3 minutes
+                #print(f"\n{Fore.YELLOW}Next update in:{Style.RESET_ALL}")
+                #total_seconds = 180  # 3 minutes = 180 seconds
+                #for remaining in range(total_seconds, 0, -1):
+                    #minutes = remaining // 60
+                    #seconds = remaining % 60
+                    #print(f"\r{Fore.YELLOW}{minutes:02d}:{seconds:02d}{Style.RESET_ALL}", end="")
+                    #time.sleep(1)
+                #print("\n")  # New line after countdown
+                
+                
                 # Geri sayım ekranı
                 print(f"\n{Fore.YELLOW}Next update in:{Style.RESET_ALL}")
                 for remaining in range(60, 0, -1):
@@ -407,7 +428,7 @@ class BinanceTradeExecutor:
             except Exception as e:
                 print(f"{Fore.RED}Error in trade cycle: {str(e)}{Style.RESET_ALL}")
                 logging.error(f"Error in trade cycle: {e}")
-                time.sleep(60)
+                time.sleep(180)
 
 
 # #################### BAŞLATMA ####################
