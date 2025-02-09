@@ -44,7 +44,7 @@ The bot enters positions when the following conditions are met:
 
 Buy Signals
 
-RSI < 55 or bullish divergence
+RSI < 65 or bullish divergence
 MACD momentum or volume spike
 Price near EMA (50 or 200)
 Increased trading volume
