@@ -1,9 +1,4 @@
 
-"""
-bot.py - Reworked Binance trading bot with integrated CSV logging.
-This module defines the BinanceTradeExecutor class, which executes the trading cycle,
-manages active positions, and logs every trade (BUY/SELL) into a CSV file using the CSVTradeLogger.
-"""
 
 import os
 import math
@@ -11,7 +6,6 @@ import time
 import logging
 from datetime import datetime, timedelta
 
-import ccxt  # if needed
 import pandas as pd
 import numpy as np
 import talib
@@ -295,6 +289,8 @@ class BinanceTradeExecutor:
         """
         Manage an active trade by checking for stop loss or trailing stop triggers.
         Uses DynamicRiskManager's trailing_stop to calculate dynamic exit levels.
+        Now includes a sell condition that triggers if the current price drops below EMA50
+        OR if the current price has reached at least 5% profit relative to the entry price.
         """
         if not self.active_position:
             return
@@ -304,6 +300,21 @@ class BinanceTradeExecutor:
             if current_price <= self.active_position['stop_loss']:
                 print(f"{Fore.RED}Stop loss triggered at {current_price:.8f}{Style.RESET_ALL}")
                 self.close_position('SELL')
+                return
+            ema50_value = float(current_data['ema_50'].iloc[-1])
+            profit_target = self.active_position['entry_price'] * 1.05
+            #########
+            if current_price < ema50_value or current_price >= profit_target:
+                print(f"{Fore.RED}Sell triggered: current_price {current_price:.8f} "
+                      f"(EMA50: {ema50_value:.8f} OR Profit Target (5%) reached: {profit_target:.8f}){Style.RESET_ALL}")
+                sell_limit_price = current_data['high'].max()
+                self.close_position('SELL', sell_limit_price)
+                return
+            if current_price < ema50_value or current_price >= profit_target:
+                print(f"{Fore.RED}Sell triggered: current_price {current_price:.8f} "
+                      f"(EMA50: {ema50_value:.8f} OR Profit Target (5%) reached: {profit_target:.8f}){Style.RESET_ALL}")
+                sell_limit_price = current_data['high'].max()
+                self.close_position('SELL', sell_limit_price)
                 return
             if current_price > self.peak_price:
                 self.peak_price = current_price
@@ -326,7 +337,7 @@ class BinanceTradeExecutor:
                 self.peak_price
             )
             if current_price >= trailing_stop:
-                self.close_position('BUY')
+                self.close_position('BUY', current_data["low"].min())
 
     def close_position(self, side):
         """Close the active position and log trade details."""
