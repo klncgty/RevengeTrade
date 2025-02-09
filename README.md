@@ -44,23 +44,23 @@ The bot enters positions when the following conditions are met:
 
 Buy Signals
 
-RSI < 65 or bullish divergence
-MACD momentum or volume spike
-Price near EMA (50 or 200)
-Increased trading volume
+*RSI < 65 or bullish divergence
+*MACD momentum or volume spike
+*Price near EMA (50 or 200)
+*Increased trading volume
 
 Sell Signals
 
-RSI > 60
-MACD bearish crossover
-Price below EMA50
-Volume spike
-Bearish trend confirmation
-Risk Management
-Dynamic position sizing based on account balance
-Trailing stop losses using ATR
-Take profit levels based on risk/reward ratio
-Maximum position size limits
+*RSI > 60
+*MACD bearish crossover
+*Price below EMA50
+*Volume spike
+*Bearish trend confirmation
+*Risk Management
+*Dynamic position sizing based on account balance
+*Trailing stop losses using ATR
+*Take profit levels based on risk/reward ratio
+*Maximum position size limits
 
 Usage
 
