@@ -1,6 +1,6 @@
 # Cryptocurrency Trading Bot
 
-> # under development... to be updated...
+>  under development... to be updated...
 
 
 ![image](https://github.com/user-attachments/assets/1e4b2879-33f9-4a7c-8faf-00a380c2fa9d)
