@@ -1,5 +1,17 @@
 
-
+"""
+bot.py - Reworked Binance trading bot with integrated CSV logging.
+This module defines the BinanceTradeExecutor class, which executes the trading cycle,
+manages active positions, and logs every trade (BUY/SELL) into a CSV file using the CSVTradeLogger.
+"""
+#1 - diyelim trend aşağı doğru gidiyor. bot durumu izlesin ve trend bi anda yukarı kıracak gibi olursa ( bu macd mi yoksa başka göstergeler ile mi bilmiyorum) o zaman o anda satın alsın. yani satın almayı bu durumu da gözeterek yapsın diğer conditionlar gibi.      
+#2 - diyelim trend yukarı doğru gidiyor. bot durumu izlesin ve trend bi anda aşağı kıracak gibi olursa ( bu macd mi yoksa başka göstergeler ile mi bilmiyorum
+#3 - buy durumu üç adımda gerçekleşsin.  usdtnin %30 iu ile ilk alım yapılır. sonra %30 u ile ikinci alım yapılır. sonra %40 ı ile üçüncü alım yapılır. ilk alım yapılırken buy conditions olduğu gibi olacak ikinci alımda 65 yerine 50 olacak, üçüncü alımda 40 olacak.  amaç 3 alım yaparken riski azaltmak, maliyeti düşürmek ve karı artırmak.
+    ## bu üç alım yapılırken dikkat edilecek yani rsi faktörüne bir "or" olacak şu önemli. ilk ikinci alınacak fiyat mutlaka ilk alınan fiyattan düşük olmalı. 3. alınacak fiat ise 2. alınan fiyattan düşük olmalı. yani her alım bir önceki alımın altında olmalı.
+    ### sonra bu 3 alımdan sonra ortalama maliyet ekrana yazdırılacak ( bu durum 3. alımda gerçekleşecek).
+    ##### sonra bu 3 alımdan sonra stop loss ve take profit değerleri hesaplanacak. stop loss değeri 3. alımın altına olacak. take profit değeri ise 3. alımın 1.2 katı olacak.
+    ###### tabi satarken de aynı şekilde 3 aşamada satılacak. 3. alımın 1.2 katı fiyattan satılacak. 2. alımın 1.1 katı fiyattan satılacak. 1. alımın 1.05 katı fiyattan satılacak.
+    
 import os
 import math
 import time
@@ -26,6 +38,7 @@ from advanced_indicators import AdvancedIndicators
 from trend_strategy import TrendStrategy
 from log_reporting import TradeLogger, PerformanceTracker
 from csv_trade_logger import CSVTradeLogger
+from trade_database import TradeDatabase
 
 # Load environment variables
 load_dotenv()
@@ -45,9 +58,12 @@ class BinanceTradeExecutor:
         self.client = Client(api_key, api_secret, testnet=False, requests_params={'timeout': 30})
         self.sync_time()
         self.strategy = TrendStrategy()
+        self.risk_manager = DynamicRiskManager()  # Initialize risk manager
         self.logger = TradeLogger()
         self.performance_tracker = PerformanceTracker()
         self.trade_logger = CSVTradeLogger("trade_log.csv")  # CSV trade logger integrated
+        
+        self.db = TradeDatabase()  # Database entegrasyonu
         
         self.active_position = None
         self.peak_price = None
@@ -55,7 +71,24 @@ class BinanceTradeExecutor:
         self.total_profit = 0
         self.position_status = 'ready_to_buy'  # Either 'ready_to_buy' or 'ready_to_sell'
         self.initial_balance = self.get_usdt_balance()
-    
+
+        
+        # Program başladığında aktif pozisyonu yükle
+        self.load_active_position()
+    def load_active_position(self):
+        """Database'den aktif pozisyonu yükler"""
+        position = self.db.get_active_position(Config.SYMBOL)
+        if position:
+            self.active_position = position
+            self.peak_price = position['entry_price']
+            self.position_status = 'ready_to_sell'
+            print(f"\n{Fore.CYAN}Loaded active position:{Style.RESET_ALL}")
+            print(f"Entry Price: {position['entry_price']:.8f}")
+            print(f"Quantity: {position['quantity']:.8f}")
+            print(f"Stop Loss: {position['stop_loss']:.8f}")
+            print(f"Take Profit: {position['take_profit']:.8f}")
+            
+                
     def get_usdt_balance(self) -> float:
         """Fetch available USDT balance from Binance account."""
         try:
@@ -197,6 +230,13 @@ class BinanceTradeExecutor:
                     df[col] = pd.to_numeric(df[col], errors='coerce')
                 current_price = df['close'].iloc[-1]
                 print(f"{Fore.GREEN}Market data fetched successfully. Current {symbol_full} Price: {Fore.YELLOW}{current_price:.8f}{Style.RESET_ALL}")
+                
+                #csv_filename = f"historical_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+                
+                # Save historical data to CSV file
+                #df.to_csv(csv_filename, index=False)
+                #print(f"{Fore.GREEN}Historical data saved to {csv_filename}{Style.RESET_ALL}")
+                
                 return df
             except BinanceAPIException as e:
                 if e.code == -1021:
@@ -289,55 +329,74 @@ class BinanceTradeExecutor:
         """
         Manage an active trade by checking for stop loss or trailing stop triggers.
         Uses DynamicRiskManager's trailing_stop to calculate dynamic exit levels.
-        Now includes a sell condition that triggers if the current price drops below EMA50
-        OR if the current price has reached at least 5% profit relative to the entry price.
+        Includes profit target and EMA-based exit conditions with proper error handling.
         """
-        if not self.active_position:
-            return
+        try:
+            if not self.active_position:
+                return
 
-        current_price = float(current_data['close'].iloc[-1])
-        if self.active_position['type'] == 'long':
-            if current_price <= self.active_position['stop_loss']:
-                print(f"{Fore.RED}Stop loss triggered at {current_price:.8f}{Style.RESET_ALL}")
-                self.close_position('SELL')
-                return
-            ema50_value = float(current_data['ema_50'].iloc[-1])
-            profit_target = self.active_position['entry_price'] * 1.05
-            #########
-            if current_price < ema50_value or current_price >= profit_target:
-                print(f"{Fore.RED}Sell triggered: current_price {current_price:.8f} "
-                      f"(EMA50: {ema50_value:.8f} OR Profit Target (5%) reached: {profit_target:.8f}){Style.RESET_ALL}")
-                sell_limit_price = current_data['high'].max()
-                self.close_position('SELL', sell_limit_price)
-                return
-            if current_price < ema50_value or current_price >= profit_target:
-                print(f"{Fore.RED}Sell triggered: current_price {current_price:.8f} "
-                      f"(EMA50: {ema50_value:.8f} OR Profit Target (5%) reached: {profit_target:.8f}){Style.RESET_ALL}")
-                sell_limit_price = current_data['high'].max()
-                self.close_position('SELL', sell_limit_price)
-                return
-            if current_price > self.peak_price:
-                self.peak_price = current_price
-            trailing_stop = DynamicRiskManager.trailing_stop(
-                current_price,
-                self.active_position['entry_price'],
-                'long',
-                self.peak_price
-            )
-            if current_price <= trailing_stop:
-                print(f"{Fore.YELLOW}Trailing stop triggered at {current_price:.8f}{Style.RESET_ALL}")
-                self.close_position('SELL')
-        else:
-            if current_price < self.peak_price:
-                self.peak_price = current_price
-            trailing_stop = DynamicRiskManager.trailing_stop(
-                current_price,
-                self.active_position['entry_price'],
-                'short',
-                self.peak_price
-            )
-            if current_price >= trailing_stop:
-                self.close_position('BUY', current_data["low"].min())
+            current_price = float(current_data['close'].iloc[-1])
+            
+            if self.active_position['type'] == 'long':
+                # Stop loss check
+                if current_price <= self.active_position['stop_loss']:
+                    print(f"{Fore.RED}Stop loss triggered at {current_price:.8f}{Style.RESET_ALL}")
+                    self.close_position('SELL')
+                    return
+                    
+                # EMA and profit target check
+                ema50_value = float(current_data['ema_50'].iloc[-1])
+                profit_target = self.active_position['entry_price'] * 1.05
+                
+                if current_price < ema50_value or current_price >= profit_target:
+                    print(f"{Fore.RED}Sell triggered: current_price {current_price:.8f} "
+                        f"(EMA50: {ema50_value:.8f} OR Profit Target (5%) reached: {profit_target:.8f}){Style.RESET_ALL}")
+                    sell_limit_price = current_data['high'].max()
+                    self.close_position('SELL', sell_limit_price)
+                    return
+                    
+                # Update peak price for trailing stop
+                if current_price > self.peak_price:
+                    self.peak_price = current_price
+                    
+                # Calculate and check trailing stop
+                try:
+                    trailing_stop = self.risk_manager.trailing_stop(
+                        current_price=current_price,
+                        entry_price=self.active_position['entry_price'],
+                        position_type='long',
+                        peak_price=self.peak_price
+                    )
+                    
+                    if trailing_stop and current_price <= trailing_stop:
+                        print(f"{Fore.YELLOW}Trailing stop triggered at {current_price:.8f}{Style.RESET_ALL}")
+                        self.close_position('SELL')
+                        
+                except Exception as e:
+                    logging.error(f"Trailing stop calculation error: {str(e)}")
+                    
+            else:  # Short position management
+                if current_price < self.peak_price:
+                    self.peak_price = current_price
+                    
+                try:
+                    trailing_stop = self.risk_manager.trailing_stop(
+                        current_price=current_price,
+                        entry_price=self.active_position['entry_price'],
+                        position_type='short',
+                        peak_price=self.peak_price
+                    )
+                    
+                    if trailing_stop and current_price >= trailing_stop:
+                        limit_price = current_data["low"].min()
+                        self.close_position('BUY', limit_price)
+                        
+                except Exception as e:
+                    logging.error(f"Trailing stop calculation error for short position: {str(e)}")
+                    
+        except Exception as e:
+            logging.error(f"Error in manage_active_trade: {str(e)}")
+            print(f"{Fore.RED}Trade management error: {str(e)}{Style.RESET_ALL}")
 
     def close_position(self, side):
         """Close the active position and log trade details."""
@@ -347,6 +406,12 @@ class BinanceTradeExecutor:
             if order:
                 exit_price = float(order['fills'][0]['price'])
                 profit = (exit_price - self.active_position['entry_price']) * self.active_position['quantity']
+                # Database'i güncelle
+                self.db.close_position(
+                    symbol=Config.SYMBOL,
+                    exit_price=exit_price,
+                    profit=profit
+                )
                 if self.active_position['type'] == 'short':
                     profit = -profit
                 trade_data = {
