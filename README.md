@@ -37,6 +37,10 @@ SYMBOL = "DOGE"         # Trading pair
 TIMEFRAME = "1m"        # Candlestick interval
 RISK_PER_TRADE = 0.01  # Risk per trade (1%)
 MIN_RISK_REWARD = 2    # Minimum risk/reward ratio
+.
+.
+.
+
 ```
 
 ## Trading Strategy
