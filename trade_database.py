@@ -1,108 +1,107 @@
-from sqlalchemy import create_engine, Column, Integer, Float, String, DateTime, JSON
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.sql import func
-from datetime import datetime
-import logging
-from typing import Optional, Dict
+import talib
+import numpy as np
 from config import Config
+import logging
+from typing import Optional, Tuple, Union
 
-Base = declarative_base()
-
-class TradePosition(Base):
-    __tablename__ = 'trade_positions'
-    
-    id = Column(Integer, primary_key=True)
-    symbol = Column(String, index=True)
-    entry_price = Column(Float)
-    quantity = Column(Float)
-    entry_time = Column(DateTime, default=func.now())
-    status = Column(String)  # 'active' or 'closed'
-    position_type = Column(String)  # 'long' or 'short'
-    stop_loss = Column(Float)
-    take_profit = Column(Float)
-    exit_price = Column(Float, nullable=True)
-    exit_time = Column(DateTime, nullable=True)
-    profit = Column(Float, nullable=True)
-    metadata = Column(JSON)
-
-class TradeDatabase:
-    def __init__(self, db_url: str = 'sqlite:///trades.db'):
-        self.engine = create_engine(db_url)
-        Base.metadata.create_all(self.engine)
-        self.Session = sessionmaker(bind=self.engine)
+class DynamicRiskManager:
+    def __init__(self):
         self.logger = logging.getLogger(__name__)
-    
-    def add_position(self, symbol: str, entry_price: float, quantity: float,
-                    position_type: str, stop_loss: float, take_profit: float) -> Optional[TradePosition]:
-        """Yeni pozisyon ekler"""
+        
+    def calculate_dynamic_target(self, data):
+        """
+        Dinamik hedef fiyatları hesaplar ve hata kontrolü yapar
+        """
         try:
-            session = self.Session()
-            position = TradePosition(
-                symbol=symbol,
-                entry_price=entry_price,
-                quantity=quantity,
-                status='active',
-                position_type=position_type,
-                stop_loss=stop_loss,
-                take_profit=take_profit,
-                metadata={}
-            )
-            session.add(position)
-            session.commit()
-            return position
-        except Exception as e:
-            self.logger.error(f"Error adding position: {e}")
-            session.rollback()
-            return None
-        finally:
-            session.close()
-    
-    def get_active_position(self, symbol: str) -> Optional[Dict]:
-        """Sembol için aktif pozisyonu getirir"""
-        try:
-            session = self.Session()
-            position = session.query(TradePosition).filter(
-                TradePosition.symbol == symbol,
-                TradePosition.status == 'active'
-            ).first()
+            # Veri kontrolü
+            if data is None or data.empty:
+                raise ValueError("Geçersiz veri")
+                
+            if not all(col in data.columns for col in ['high', 'low', 'close']):
+                raise ValueError("Eksik fiyat kolonları")
+
+            # NaN değer kontrolü
+            if data['high'].isnull().any() or data['low'].isnull().any() or data['close'].isnull().any():
+                self.logger.warning("Veri setinde NaN değerler var - temizleniyor")
+                data = data.fillna(method='ffill')
+
+            # ATR hesaplama
+            atr = talib.ATR(data['high'], 
+                           data['low'], 
+                           data['close'], 
+                           timeperiod=Config.ATR_PERIOD)
             
-            if position:
-                return {
-                    'type': position.position_type,
-                    'entry_price': position.entry_price,
-                    'quantity': position.quantity,
-                    'entry_time': position.entry_time,
-                    'stop_loss': position.stop_loss,
-                    'take_profit': position.take_profit
-                }
-            return None
+            if atr.iloc[-1] <= 0:
+                raise ValueError("Geçersiz ATR değeri")
+
+            current_atr = atr.iloc[-1]
+            close_price = data['close'].iloc[-1]
+
+            # Hedef hesaplama
+            long_target = close_price + (current_atr * 2)
+            short_target = close_price - (current_atr * 1.5)
+
+            return long_target, short_target
+
         except Exception as e:
-            self.logger.error(f"Error getting active position: {e}")
-            return None
-        finally:
-            session.close()
-    
-    def close_position(self, symbol: str, exit_price: float, profit: float) -> bool:
-        """Aktif pozisyonu kapatır"""
+            self.logger.error(f"Hedef hesaplama hatası: {str(e)}")
+            return None, None
+
+    def trailing_stop(self, 
+                     current_price: float, 
+                     entry_price: float, 
+                     position_type: str,
+                     peak_price: Optional[float] = None) -> Optional[float]:
+        """
+        Calculate trailing stop with proper peak price handling.
+        
+        Args:
+            current_price (float): Current market price
+            entry_price (float): Position entry price
+            position_type (str): 'long' or 'short'
+            peak_price (float, optional): Highest/lowest price since entry. 
+                                        Defaults to current_price if None
+                                        
+        Returns:
+            Optional[float]: Calculated trailing stop price
+        """
         try:
-            session = self.Session()
-            position = session.query(TradePosition).filter(
-                TradePosition.symbol == symbol,
-                TradePosition.status == 'active'
-            ).first()
-            
-            if position:
-                position.status = 'closed'
-                position.exit_price = exit_price
-                position.exit_time = datetime.now()
-                position.profit = profit
-                session.commit()
-                return True
-            return False
+            if not all(isinstance(x, (int, float)) for x in [current_price, entry_price]):
+                raise ValueError("Invalid price values")
+
+            if current_price <= 0 or entry_price <= 0:
+                raise ValueError("Prices must be positive")
+
+            if position_type not in ['long', 'short']:
+                raise ValueError("Invalid position type")
+
+            # Use current_price as peak_price if none provided
+            peak_price = peak_price if peak_price is not None else current_price
+
+            if position_type == 'long':
+                new_stop = current_price * (1 - Config.TRAILING_STOP_PCT/100)
+                return max(new_stop, peak_price * (1 - Config.TRAILING_STOP_PCT/100))
+            else:
+                new_stop = current_price * (1 + Config.TRAILING_STOP_PCT/100)
+                return min(new_stop, peak_price * (1 + Config.TRAILING_STOP_PCT/100))
+
         except Exception as e:
-            self.logger.error(f"Error closing position: {e}")
-            session.rollback()
+            self.logger.error(f"Trailing stop calculation error: {str(e)}")
+            return None
+
+    def validate_risk_params(self):
+        """
+        Risk parametrelerinin geçerliliğini kontrol eder
+        """
+        try:
+            if Config.ATR_PERIOD <= 0:
+                raise ValueError("ATR periyodu pozitif olmalı")
+            
+            if Config.TRAILING_STOP_PCT <= 0 or Config.TRAILING_STOP_PCT >= 100:
+                raise ValueError("Trailing stop yüzdesi 0-100 arasında olmalı")
+
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Risk parametre kontrolü hatası: {str(e)}")
             return False
-        finally:
-            session.close()
