@@ -1,17 +1,5 @@
 
-"""
-bot.py - Reworked Binance trading bot with integrated CSV logging.
-This module defines the BinanceTradeExecutor class, which executes the trading cycle,
-manages active positions, and logs every trade (BUY/SELL) into a CSV file using the CSVTradeLogger.
-"""
-#1 - diyelim trend aşağı doğru gidiyor. bot durumu izlesin ve trend bi anda yukarı kıracak gibi olursa ( bu macd mi yoksa başka göstergeler ile mi bilmiyorum) o zaman o anda satın alsın. yani satın almayı bu durumu da gözeterek yapsın diğer conditionlar gibi.      
-#2 - diyelim trend yukarı doğru gidiyor. bot durumu izlesin ve trend bi anda aşağı kıracak gibi olursa ( bu macd mi yoksa başka göstergeler ile mi bilmiyorum
-#3 - buy durumu üç adımda gerçekleşsin.  usdtnin %30 iu ile ilk alım yapılır. sonra %30 u ile ikinci alım yapılır. sonra %40 ı ile üçüncü alım yapılır. ilk alım yapılırken buy conditions olduğu gibi olacak ikinci alımda 65 yerine 50 olacak, üçüncü alımda 40 olacak.  amaç 3 alım yaparken riski azaltmak, maliyeti düşürmek ve karı artırmak.
-    ## bu üç alım yapılırken dikkat edilecek yani rsi faktörüne bir "or" olacak şu önemli. ilk ikinci alınacak fiyat mutlaka ilk alınan fiyattan düşük olmalı. 3. alınacak fiat ise 2. alınan fiyattan düşük olmalı. yani her alım bir önceki alımın altında olmalı.
-    ### sonra bu 3 alımdan sonra ortalama maliyet ekrana yazdırılacak ( bu durum 3. alımda gerçekleşecek).
-    ##### sonra bu 3 alımdan sonra stop loss ve take profit değerleri hesaplanacak. stop loss değeri 3. alımın altına olacak. take profit değeri ise 3. alımın 1.2 katı olacak.
-    ###### tabi satarken de aynı şekilde 3 aşamada satılacak. 3. alımın 1.2 katı fiyattan satılacak. 2. alımın 1.1 katı fiyattan satılacak. 1. alımın 1.05 katı fiyattan satılacak.
-    
+
 import os
 import math
 import time
