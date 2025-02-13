@@ -74,9 +74,7 @@ from config import Config
 ```
 # Initialize and run the bot
 ```ruby
-bot = BinanceTradeExecutor(api_key, api_secret)
-
-bot.execute_trade_cycle()
+python bot.py
 ```
 
 ## Console Output
