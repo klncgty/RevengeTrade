@@ -788,9 +788,7 @@ class BinanceTradeExecutor:
                 print(f"\n{Fore.YELLOW}Gelecek güncellemeye:{minute} dakika var. {Style.RESET_ALL}")
                 progress_bar(Config.LENGTH_BAR)
 
-                """for remaining in range(60, 0, -1):
-                    print(f"\r{Fore.YELLOW}{remaining} seconds{Style.RESET_ALL}", end="")
-                    time.sleep(1)"""
+               
                     
                 print("\n")
 
@@ -821,16 +819,7 @@ if __name__ == "__main__":
     Config.SYMBOL = selected_coin.upper()
     trader = BinanceTradeExecutor(API_KEY, API_SECRET)
    
-    """position_manager = InitialPositionManager(
-    client=trader.client,
-    db=trader.db,
-    get_symbol_balance=trader.get_symbol_balance
-)
-
-# Manuel pozisyon ekle
-    position_manager.add_manual_position(
-        symbol='SHIB',
-        entry_price=0.00001578,order_id ="MANUAL")"""
+    
     
     trader.execute_trade_cycle()
     
