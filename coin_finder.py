@@ -6,7 +6,7 @@ from config import Config
 import os   
 import threading
 from dotenv import load_dotenv
-load_dotenv()
+
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
@@ -18,6 +18,8 @@ import logging
 
 logging.getLogger("binance.client").setLevel(logging.WARNING)
 logging.getLogger("langchain_groq").setLevel(logging.WARNING)
+
+load_dotenv()
 
 class CoinAnalyzer:
     def __init__(self, api_key, api_secret, coins):
@@ -123,7 +125,7 @@ class CoinAnalyzer:
         return response
     
  
-        
+# test      
 if __name__ == "__main__":
     api_key = os.getenv("API_KEY_")
     api_secret = os.getenv("API_SECRET_")
