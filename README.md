@@ -1,5 +1,9 @@
 # Cryptocurrency Trading Bot
-𝓣𝓱𝓲𝓼 𝓫𝓸𝓽 𝓲𝓼 𝓶𝓸𝓻𝓮 𝓽𝓱𝓪𝓷 𝓬𝓸𝓭𝓮. 𝓣𝓱𝓮𝓻𝓮 𝓲𝓼 𝓫𝓵𝓸𝓸𝓭, 𝓼𝔀𝓮𝓪𝓽, 𝓽𝓮𝓪𝓻𝓼, 𝓪𝓷𝓭 𝓲𝓭𝓮𝓪𝓼 𝓫𝓮𝓱𝓲𝓷𝓭 𝓲𝓽.
+<p style="font-family: 'Caveat', cursive; font-size: 24px;">
+Behind this bot, there is more than just code. <br>
+Beneath this bot, there is blood, sweat, tears, and an idea… <br>
+And ideas are unstoppable.
+</p>
 
 >  under development... to be updated...
 
