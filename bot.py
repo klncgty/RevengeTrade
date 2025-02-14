@@ -41,7 +41,6 @@ logging.basicConfig(
     format='%(asctime)s - %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S'
 )
-logging.getLogger("binance.client").setLevel(logging.WARNING)
 logging.getLogger("langchain_groq").setLevel(logging.WARNING)
 class BinanceTradeExecutor:
     
@@ -198,14 +197,15 @@ class BinanceTradeExecutor:
         print(f"Current Price: {Fore.YELLOW}{current_close:.8f}{Style.RESET_ALL}")
         self.position_calculator.print_position_summary(Config.SYMBOL)
 
-        # EMA Rejection Status - Her zaman göster
-        print(f"\n{Fore.CYAN}EMA-50 Rejection Status:{Style.RESET_ALL}")
-        print(f"Total Rejections: {self.strategy.ema_reject.rejection_count}/{self.strategy.ema_reject.max_rejections}")
-        if self.strategy.ema_reject.last_rejection_price:
-            print(f"Last Rejection Price: {Fore.YELLOW}{self.strategy.ema_reject.last_rejection_price:.8f}{Style.RESET_ALL}")
-            if self.strategy.ema_reject.rejection_timestamps:
-                last_rejection_time = self.strategy.ema_reject.rejection_timestamps[-1]
-                print(f"Last Rejection Time: {last_rejection_time}")
+        if self.position_status == 'ready_to_sell':
+            # EMA Rejection Status sadece satış için göster
+            print(f"\n{Fore.CYAN}EMA-50 Rejection Status:{Style.RESET_ALL}")
+            print(f"Total Rejections: {self.strategy.ema_reject.rejection_count}/{self.strategy.ema_reject.max_rejections}")
+            if self.strategy.ema_reject.last_rejection_price:
+                print(f"Last Rejection Price: {Fore.YELLOW}{self.strategy.ema_reject.last_rejection_price:.8f}{Style.RESET_ALL}")
+                if self.strategy.ema_reject.rejection_timestamps:
+                    last_rejection_time = self.strategy.ema_reject.rejection_timestamps[-1]
+                    print(f"Last Rejection Time: {last_rejection_time}")
                 
                 
         self.strategy.print_channel_status(data)
@@ -222,22 +222,23 @@ class BinanceTradeExecutor:
         )
 
         # Display Buy Conditions
-        print(f"\n{Fore.CYAN}Buy Conditions Status:{Style.RESET_ALL}")
+        """print(f"\n{Fore.CYAN}Buy Conditions Status:{Style.RESET_ALL}")
         rsi_buy_check = data['rsi'].iloc[-1] < Config.RSI_BUY
         print(f"1. RSI < {Config.RSI_BUY}: {Fore.GREEN if rsi_buy_check else Fore.RED}✓ (Current: {data['rsi'].iloc[-1]:.2f}){Style.RESET_ALL}")
         print(f"2. MACD Momentum or Volume Spike: {Fore.GREEN if (macd_momentum or volume_spike) else Fore.RED}✓{Style.RESET_ALL}")
-        print(f"3. EMA Conditions: {Fore.GREEN if ema_conditions else Fore.RED}✓{Style.RESET_ALL}")
+        print(f"3. EMA Conditions: {Fore.GREEN if ema_conditions else Fore.RED}✓{Style.RESET_ALL}")"""
 
         # Display Sell Conditions
-        print(f"\n{Fore.CYAN}Sell Conditions Status:{Style.RESET_ALL}")
-        rsi_sell_check = data['rsi'].iloc[-1] > Config.RSI_SELL
-        macd_sell_check = data['macd'].iloc[-1] < data['macd_signal'].iloc[-1]
-        ema_sell_check = data['close'].iloc[-1] < data['ema_50'].iloc[-1]
-        trend_sell_check = self.strategy.check_trend_alignment(data) == 'bearish'
-        print(f"1. RSI > {Config.RSI_SELL}: {Fore.GREEN if rsi_sell_check else Fore.RED}✓ (Current: {data['rsi'].iloc[-1]:.2f}){Style.RESET_ALL}")
-        print(f"2. MACD < Signal: {Fore.GREEN if macd_sell_check else Fore.RED}✓{Style.RESET_ALL}")
-        print(f"3. Price < EMA50: {Fore.GREEN if ema_sell_check else Fore.RED}✓{Style.RESET_ALL}")
-        print(f"4. Bearish Trend: {Fore.GREEN if trend_sell_check else Fore.RED}✓{Style.RESET_ALL}")
+        if self.position_status == 'ready_to_sell':
+            print(f"\n{Fore.CYAN}Sell Conditions Status:{Style.RESET_ALL}")
+            rsi_sell_check = data['rsi'].iloc[-1] > Config.RSI_SELL
+            macd_sell_check = data['macd'].iloc[-1] < data['macd_signal'].iloc[-1]
+            ema_sell_check = data['close'].iloc[-1] < data['ema_50'].iloc[-1]
+            trend_sell_check = self.strategy.check_trend_alignment(data) == 'bearish'
+            print(f"1. RSI > {Config.RSI_SELL}: {Fore.GREEN if rsi_sell_check else Fore.RED}✓ (Current: {data['rsi'].iloc[-1]:.2f}){Style.RESET_ALL}")
+            print(f"2. MACD < Signal: {Fore.GREEN if macd_sell_check else Fore.RED}✓{Style.RESET_ALL}")
+            print(f"3. Price < EMA50: {Fore.GREEN if ema_sell_check else Fore.RED}✓{Style.RESET_ALL}")
+            print(f"4. Bearish Trend: {Fore.GREEN if trend_sell_check else Fore.RED}✓{Style.RESET_ALL}")
 
         if self.active_position:
             profit = (current_close - self.active_position['entry_price']) * self.active_position['quantity']
@@ -788,7 +789,9 @@ class BinanceTradeExecutor:
                 print(f"\n{Fore.YELLOW}Gelecek güncellemeye:{minute} dakika var. {Style.RESET_ALL}")
                 progress_bar(Config.LENGTH_BAR)
 
-               
+                """for remaining in range(60, 0, -1):
+                    print(f"\r{Fore.YELLOW}{remaining} seconds{Style.RESET_ALL}", end="")
+                    time.sleep(1)"""
                     
                 print("\n")
 
@@ -800,7 +803,7 @@ class BinanceTradeExecutor:
 if __name__ == "__main__":
     API_KEY = os.getenv("API_KEY_")
     API_SECRET = os.getenv("API_SECRET_")
-    coins = ["SHIB", "BEAMX", "NOT", "SLP", "HOT","BTTC","PEPE","XEC","SPELL","COS","RVN"]
+    """coins = ["SHIB", "BEAMX", "NOT", "SLP", "HOT","BTTC","PEPE","XEC","SPELL","COS","RVN"]
     analyzer = CoinAnalyzer(API_KEY, API_SECRET, coins)
     try:
         response = analyzer.analyze_trends()
@@ -816,10 +819,19 @@ if __name__ == "__main__":
     print("\n")
     selected_coin = input("Bu  analizden sonra hangi coin ile işlem yapmak istersiniz? ")
     
-    Config.SYMBOL = selected_coin.upper()
+    Config.SYMBOL = selected_coin.upper()"""
     trader = BinanceTradeExecutor(API_KEY, API_SECRET)
    
-    
+    """position_manager = InitialPositionManager(
+    client=trader.client,
+    db=trader.db,
+    get_symbol_balance=trader.get_symbol_balance
+)
+
+# Manuel pozisyon ekle
+    position_manager.add_manual_position(
+        symbol='SHIB',
+        entry_price=0.00001578,order_id ="MANUAL")"""
     
     trader.execute_trade_cycle()
     
