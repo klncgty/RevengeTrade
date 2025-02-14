@@ -458,13 +458,15 @@ class BinanceTradeExecutor:
     def manage_active_trade(self, current_data: pd.DataFrame) -> Optional[str]:
         """Aktif pozisyonun satılıp satılmaması gerektiğini kontrol eder ve bir "SELL" sinyali döndürür."""
         try:
+            if self.position_status != 'ready_to_sell':
+                return None
             if not self.active_position:
                 return None
 
             # Retrieve current market price and the position's entry price.
             current_price = float(current_data['close'].iloc[-1])
             entry_price = self.active_position['entry_price']
-            print(f"[DEBUG] Current price: {current_price:.8f}, Entry price: {entry_price:.8f}")
+            print(f"Current price: {current_price:.8f}, Entry price: {entry_price:.8f}")
 
             # Check for an existing pending sell order and update its status.
             if self.pending_sell_order:
@@ -473,7 +475,7 @@ class BinanceTradeExecutor:
                         symbol=f"{Config.SYMBOL}USDT",
                         orderId=self.pending_sell_order['orderId']
                     )
-                    print(f"[DEBUG] Pending sell order status: {order_status['status']} for Order ID: {self.pending_sell_order['orderId']}")
+                    print(f"Pending sell order status: {order_status['status']} for Order ID: {self.pending_sell_order['orderId']}")
                     if order_status['status'] in ['FILLED', 'CANCELED']:
                         self.pending_sell_order = None
                         self.sell_order_time = None
@@ -488,7 +490,7 @@ class BinanceTradeExecutor:
             # ----- Profit Target Check -----
             target_reached, profit_percentage, _ = self.position_calculator.check_profit_target(Config.SYMBOL)
             if target_reached:
-                print(f"[DEBUG] Profit target reached: {profit_percentage:.2f}% (target: {Config.PROFIT_TARGET}%)")
+                print(f"Hedef kar oranına olaşıldı🎯: {profit_percentage:.2f}% (target: {Config.PROFIT_TARGET}%)")
                 self.last_sell_condition = 'profit_target'
                 return 'SELL'
 
@@ -506,17 +508,23 @@ class BinanceTradeExecutor:
                 trend == 'bearish'
             )
             if sell_conditions_met:
-                print(f"[DEBUG] All technical sell conditions met. Signal SELL.")
+                print(f"\033[92mTüm teknik satış koşulları sağlandı! SATIŞ sinyali gönderiliyor.\033[0m")
                 return 'SELL'
 
             # ----- Additional Sell Conditions -----
-            if self.strategy.ema_reject.analyze_ema_rejections(current_data):
-                print(f"[DEBUG] EMA rejection triggered. Signal SELL.")
+            if self.strategy.ema_reject.analyze_ema_rejections(current_data) and current_price > entry_price:
+                print(f"\033[92mEMA reddi tespit edildi! SATIŞ sinyali gönderiliyor.\033[0m")
                 return 'SELL'
+            else:
+                if current_price < entry_price:
+                    print(f"\033[93mAlış fiyatından düşük. SATIŞ sinyali gönderilmedi.\033[0m")
 
             if current_price <= self.active_position['stop_loss'] and not current_data['supertrend'].iloc[-1]  and current_price < current_data['sar'].iloc[-1]:
-                print(f"[DEBUG] Stop loss triggered at {current_price:.8f} with SuperTrend downtrend. Signal SELL.")
+                print(f"\033[91mStop-loss seviyesi tetiklendi! Güncel fiyat: {current_price:.8f}, SuperTrend düşüş trendinde. SATIŞ sinyali gönderiliyor!\033[0m")
                 return 'SELL'
+            else:  
+                if current_price <= self.active_position['stop_loss']:
+                    print(f"\033[93mSakin ol şampiyon. Stop-loss yapmaya gerek yok, gerekli piyasa koşulları sağlanmadı.\033[0m")
 
             if self.peak_price and current_price <= self.risk_manager.trailing_stop(
                 current_price=current_price,
@@ -524,7 +532,7 @@ class BinanceTradeExecutor:
                 position_type='long',
                 peak_price=self.peak_price
             ):
-                print(f"[DEBUG] Trailing stop triggered. Signal SELL.")
+                print(f"\033[91mTakip eden stop tetiklendi! SATIŞ sinyali gönderiliyor.\033[0m")
                 return 'SELL'
 
             return None
@@ -577,6 +585,8 @@ class BinanceTradeExecutor:
             if order:
                 exit_price = float(order['fills'][0]['price'])
                 profit = (exit_price - self.active_position['entry_price']) * self.active_position['quantity']
+                print(f"{Fore.GREEN}=== Satış Gerçekleşti! Kar Oranı: {trade_data['return_pct']:.2f}% 💰 ==={Style.RESET_ALL}")
+
                 # Database'i güncelle
                 self.db.close_position(
                     symbol=Config.SYMBOL,
@@ -621,7 +631,7 @@ class BinanceTradeExecutor:
                     quantity=self.active_position['quantity'], 
                     price=exit_price, 
                     pnl=profit, 
-                    notes=f"{'LIMIT' if self.last_sell_condition=='profit_target' else 'MARKET'} sell order executed"
+                    notes=f"{'LIMIT' if self.last_sell_condition=='profit_target' else 'MARKET'} satış emri verildi"
                 )
                 # Clear active position and reset last_sell_condition.
                 self.active_position = None
@@ -636,8 +646,7 @@ class BinanceTradeExecutor:
 
     def execute_trade_cycle(self):
         """Ana ticaret döngüsünü yürütür ve veritabanı güncellemelerini yapar."""
-        logging.info("Starting trading cycle...")
-        print(f"{Fore.CYAN}Starting trading bot...{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}Trading Bot Başlatılıyor 🔥🔥🔥{Style.RESET_ALL}")
         print(f"Trading {Config.SYMBOL}USDT on {Config.TIMEFRAME} timeframe")
         print(f"Risk per trade: {Config.RISK_PER_TRADE*100}%")
         
@@ -663,7 +672,7 @@ class BinanceTradeExecutor:
                     open_orders = self.client.get_open_orders(symbol=f"{Config.SYMBOL}USDT")
                     if open_orders:
                         has_pending_orders = True
-                        print(f"\n{Fore.YELLOW}Pending orders found. Skipping new order placement.{Style.RESET_ALL}")
+                        print(f"\n{Fore.YELLOW}Bekleyen emirler bulundu. Yeni emir yerleştirme atlanıyor.{Style.RESET_ALL}")
                         for order in open_orders:
                             print(f"Order ID: {order['orderId']}")
                             print(f"Type: {order['type']}")
