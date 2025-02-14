@@ -1,9 +1,8 @@
 # Cryptocurrency Trading Bot
+# 𝓣𝓱𝓲𝓼 𝓫𝓸𝓽 𝓲𝓼 𝓶𝓸𝓻𝓮 𝓽𝓱𝓪𝓷 𝓬𝓸𝓭𝓮. 𝓣𝓱𝓮𝓻𝓮 𝓲𝓼 𝓫𝓵𝓸𝓸𝓭, 𝓼𝔀𝓮𝓪𝓽, 𝓽𝓮𝓪𝓻𝓼, 𝓪𝓷𝓭 𝓲𝓭𝓮𝓪𝓼 𝓫𝓮𝓱𝓲𝓷𝓭 𝓲𝓽.
 
 >  under development... to be updated...
-
-
-![image](https://github.com/user-attachments/assets/1e4b2879-33f9-4a7c-8faf-00a380c2fa9d)
+> ![image](https://github.com/user-attachments/assets/1e4b2879-33f9-4a7c-8faf-00a380c2fa9d)
 
 ## Overview
 An automated trading bot for cryptocurrency markets using Binance API. The bot implements a trend-following strategy with multiple technical indicators and dynamic risk management.
