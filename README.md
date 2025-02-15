@@ -55,7 +55,7 @@ The bot is built using organized modules for strategies, risk management, order 
 
 The bot structure is divided into several key modules:
 
-- **bot_v2.py:** The main entry point that orchestrates data fetching, signal generation, order execution, and active trade management.
+- **bot.py:** The main entry point that orchestrates data fetching, signal generation, order execution, and active trade management.
 - **TrendStrategy:** Handles market analysis and technical indicator calculations, along with generating buy/sell signals.
 - **DynamicRiskManager:** Computes dynamic targets and trailing stops based on volatility and ATR.
 - **CSVTradeLogger & TradePositionManager:** Responsible for logging trade transactions and managing open positions in the database.
