@@ -3,7 +3,9 @@
 
 >  under development... to be updated...
 
-> ![image](https://github.com/user-attachments/assets/1e4b2879-33f9-4a7c-8faf-00a380c2fa9d)
+![image](https://github.com/user-attachments/assets/2025b8aa-4439-40da-b3d5-c4d57d723896)
+
+
 
 This project implements an automated cryptocurrency trading bot that interacts with the Binance API to fetch market data, generate trading signals based on technical analysis, manage risk, and execute trades. The bot leverages advanced strategies for both market entry and exit conditions using technical indicators such as RSI, MACD, EMA, ATR, and others.
 
