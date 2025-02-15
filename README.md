@@ -30,8 +30,6 @@ This project implements an automated cryptocurrency trading bot that interacts w
 
 Tired of staring at charts all day? Let the Binance Trading Bot do the heavy lifting! This bot continuously monitors the market, analyzes trends, and makes smart trading decisions—so you don’t have to. Even while you sleep, it’s working to catch the best opportunities! 🛌💰
 
-## 📌 Features
-
 ### 📊 Smart Market Analysis  
 - Fetches historical and real-time data  
 - Calculates technical indicators  
