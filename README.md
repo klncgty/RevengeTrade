@@ -73,8 +73,7 @@ The project uses internal organization modules, configuration constants (via a `
 1. **Clone the repository:**
 
     ```
-    git clone https://github.com/your-repo/binance-trading-bot.git
-    cd binance-trading-bot
+    git@github.com:klncgty/Cryptocurrency-Trading-Bot.git
     ```
 
 2. **Install dependencies:**
