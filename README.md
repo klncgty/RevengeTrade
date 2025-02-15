@@ -117,9 +117,9 @@ Ensure you customize these values in the configuration file to suit your trading
 
 ## Usage
 
-To start the trading bot, run the main script:
+To start the trading bot, run the main script bot.py:
 
-The bot will:
+The bot.py will:
 - Synchronize the local time with the Binance server.
 - Load active positions from the database.
 - Fetch real-time market data and perform analysis.
