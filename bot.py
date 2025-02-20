@@ -32,6 +32,10 @@ from pos_cost_cal import PositionCostCalculator
 from limit_sell_order import LimitSellOrderExecutor
 from loading import progress_bar
 from coin_finder import CoinAnalyzer
+from advanced_stoploss import AdvancedStopLossManager
+from stop_loss_print import StopLossMessaging
+from part_by_part import PartByPartStrategy
+
 load_dotenv()
 
 colorama.init()
@@ -69,7 +73,11 @@ class BinanceTradeExecutor:
         
         self.last_sell_condition = None
         
-            
+        self.stop_loss_messaging = StopLossMessaging()
+        self.part_strategy = PartByPartStrategy()
+        # List to track successful trades
+        self.successful_trades = []
+          
         # Load active position at startup
         self.load_active_position()
         
@@ -89,7 +97,6 @@ class BinanceTradeExecutor:
             print(f"\n{Fore.YELLOW}No active position found. Starting fresh.{Style.RESET_ALL}")  
             self.active_position = None
             self.peak_price = None"""
-    
     def load_active_position(self):
         """Database'den aktif pozisyonu yükler"""
         try:
@@ -486,14 +493,28 @@ class BinanceTradeExecutor:
                     print(f"[DEBUG] Error checking pending order status: {e_order}")
                     self.pending_sell_order = None
                     self.sell_order_time = None
-
-            # ----- Profit Target Check -----
-            target_reached, profit_percentage, _ = self.position_calculator.check_profit_target(Config.SYMBOL)
-            if target_reached:
-                print(f"Hedef kar oranına olaşıldı🎯: {profit_percentage:.2f}% (target: {Config.PROFIT_TARGET}%)")
-                self.last_sell_condition = 'profit_target'
-                return 'SELL'
-
+            
+            
+            
+            if Config.PART_SELL:
+                part_sell = self.part_strategy.check_sell_conditions(current_price, entry_price)
+                if part_sell["should_sell"]:
+                    print(part_sell["message"])
+                    return 'SELL'
+            else:
+                # ----- Profit Target Check1 -----
+                target_reached, profit_percentage, _ = self.position_calculator.check_profit_target(Config.SYMBOL)
+                if target_reached:
+                    if profit_percentage > 3.0:
+                        print(f"\033[1;32m🔥🔥🔥En yüksek kar oranına ulaşıldı🎯: {profit_percentage:.2f}% (target: 3%)\033[0m")
+                    elif profit_percentage > 1.0:
+                        print(f"\033[1;32m🔥🔥Orta hedefli kar oranına ulaşıldı🎯: {profit_percentage:.2f}% (target: 1.4%)\033[0m")
+                    elif profit_percentage > 0.5:
+                        print(f"\033[1;32m🔥Düşük hedefli kar oranına ulaşıldı🎯: {profit_percentage:.2f}% (target: {Config.PROFIT_TARGET}%)\033[0m")
+                    
+                    self.last_sell_condition = 'profit_target'
+                    return 'SELL'  # Profit target reached
+            
             # ----- Technical Sell Conditions -----
             rsi = current_data['rsi'].iloc[-1]
             macd = current_data['macd'].iloc[-1]
@@ -507,25 +528,52 @@ class BinanceTradeExecutor:
                 current_price < ema_50 and
                 trend == 'bearish'
             )
-            if sell_conditions_met:
+            # ----- Sell conditions met -----
+            if sell_conditions_met and current_price > entry_price:
                 print(f"\033[92mTüm teknik satış koşulları sağlandı! SATIŞ sinyali gönderiliyor.\033[0m")
                 return 'SELL'
 
-            # ----- Additional Sell Conditions -----
+            # ----- ema Sell Conditions -----
             if self.strategy.ema_reject.analyze_ema_rejections(current_data) and current_price > entry_price:
                 print(f"\033[92mEMA reddi tespit edildi! SATIŞ sinyali gönderiliyor.\033[0m")
                 return 'SELL'
             else:
-                if current_price < entry_price:
+                if self.strategy.ema_reject.analyze_ema_rejections(current_data) and current_price < entry_price:
                     print(f"\033[93mAlış fiyatından düşük. SATIŞ sinyali gönderilmedi.\033[0m")
 
-            if current_price <= self.active_position['stop_loss'] and not current_data['supertrend'].iloc[-1]  and current_price < current_data['sar'].iloc[-1]:
-                print(f"\033[91mStop-loss seviyesi tetiklendi! Güncel fiyat: {current_price:.8f}, SuperTrend düşüş trendinde. SATIŞ sinyali gönderiliyor!\033[0m")
-                return 'SELL'
-            else:  
-                if current_price <= self.active_position['stop_loss']:
-                    print(f"\033[93mSakin ol şampiyon. Stop-loss yapmaya gerek yok, gerekli piyasa koşulları sağlanmadı.\033[0m")
+            
+            # ----- Stop Loss Check -----
+            # Stop-loss yöneticisini başlat
+            # Her fiyat güncellemesinde kontrol et
+            self.stop_loss_manager = AdvancedStopLossManager(
+                initial_stop_loss=self.active_position['stop_loss'],
+                trailing_percentage=1.0
+            )
+            triggered, message = self.stop_loss_manager.check_stop_loss(
+                current_price=current_price,
+                current_data=current_data,
+                position_entry_price=self.active_position['entry_price']
+            )
 
+            if triggered:
+                print(self.stop_loss_messaging.generate_message(
+                    status='STOP_LOSS',
+                    current_price=current_price,
+                    stop_loss_price=self.stop_loss_manager.current_stop_loss,
+                    entry_price=self.active_position['entry_price'],
+                    current_data=current_data,
+                    reason=message
+                ))
+                return 'SELL'
+            else:
+                print(self.stop_loss_messaging.generate_message(
+                    status='NO_STOP_LOSS',
+                    current_price=current_price,
+                    stop_loss_price=self.stop_loss_manager.current_stop_loss,
+                    entry_price=self.active_position['entry_price'],
+                    current_data=current_data))
+            
+            # ----- Trailing Stop Loss Check -----
             if self.peak_price and current_price <= self.risk_manager.trailing_stop(
                 current_price=current_price,
                 entry_price=entry_price,
@@ -573,6 +621,7 @@ class BinanceTradeExecutor:
                     price=limit_price,
                     symbol=Config.SYMBOL
                 )
+                
             else:
                 print("[INFO] Using MARKET sell order.")
                 order = self.place_order(
@@ -581,17 +630,23 @@ class BinanceTradeExecutor:
                     symbol=Config.SYMBOL,
                     order_type=ORDER_TYPE_MARKET
                 )
+                
             #order = self.place_order(side, self.active_position['quantity'])
             if order:
                 exit_price = float(order['fills'][0]['price'])
                 profit = (exit_price - self.active_position['entry_price']) * self.active_position['quantity']
                 print(f"{Fore.GREEN}=== Satış Gerçekleşti! Kar Oranı: {trade_data['return_pct']:.2f}% 💰 ==={Style.RESET_ALL}")
-
+                # EMA rejection durumunu sıfırla
+                self.ema_reject.reset_rejection_count()
+                self.trade_count += 1
+                
                 # Database'i güncelle
-                self.db.close_position(
+                self.db.update_position(
                     symbol=Config.SYMBOL,
                     profit=profit,
-                    exit_reason='market_sell' if self.last_sell_condition != 'profit_target' else 'profit_target'
+                    exit_reason='market_sell' if self.last_sell_condition != 'profit_target' else 'profit_target',
+                    exit_price = exit_price,
+                    status='closed'
     
                 )
                 if self.active_position['type'] == 'short':
@@ -617,7 +672,6 @@ class BinanceTradeExecutor:
                     self.active_position['quantity'],
                     datetime.now()
                 )
-                self.trade_count += 1
                 self.total_profit += profit
                 # Log the closed trade to CSV
                 self.trade_logger.log_trade("SELL", 
@@ -642,8 +696,6 @@ class BinanceTradeExecutor:
         except Exception as e:
             logging.error(f"Error closing position: {e}")
 
-    
-
     def execute_trade_cycle(self):
         """Ana ticaret döngüsünü yürütür ve veritabanı güncellemelerini yapar."""
         print(f"{Fore.CYAN}Trading Bot Başlatılıyor 🔥🔥🔥{Style.RESET_ALL}")
@@ -657,11 +709,12 @@ class BinanceTradeExecutor:
                 
                 # Market verilerini al ve analiz et
                 data = self.get_historical_data()
+                data_4h = self.get_historical_data(interval=Client.KLINE_INTERVAL_4HOUR)
                 if data is None:
                     continue
                     
                 analyzed_data = self.strategy.analyze_market(data)
-                signal = self.strategy.generate_signal(analyzed_data)
+                signal = self.strategy.generate_signal(analyzed_data, data_4h)
                 self.print_market_status(analyzed_data, signal)
                 
                 current_price = float(analyzed_data['close'].iloc[-1])
@@ -684,7 +737,10 @@ class BinanceTradeExecutor:
                     has_pending_orders = True
 
                 # Alım koşullarını kontrol et
-                if self.position_status == 'ready_to_buy' and not has_pending_orders and signal =="long":
+                if (self.position_status == 'ready_to_buy' 
+                    and not has_pending_orders 
+                    and signal in ["long", "part_buy"]):         
+                    
                     # Stop loss ve take profit hesapla
                     atr = float(analyzed_data['atr'].iloc[-1])
                     stop_distance = atr * 2
@@ -692,6 +748,7 @@ class BinanceTradeExecutor:
                     take_profit = current_price + (stop_distance * Config.MIN_RISK_REWARD)
                     
                     quantity = self.calculate_position_size(current_price, stop_loss)
+                    print("quantity:", quantity)
                     if quantity is None:
                         continue
 
@@ -754,8 +811,8 @@ class BinanceTradeExecutor:
 
                 # Bekleyen emirleri kontrol et
                 filled_order = self.limit_order_executer.check_pending_buy_order(Config.SYMBOL)
-                if filled_order:
-                    print(f"{Fore.GREEN}Buy order filled at {filled_order['price']}{Style.RESET_ALL}")
+                if filled_order and isinstance(filled_order, dict):
+                    print(f"{Fore.GREEN}Buy order filled at {filled_order['price']}⚡{Style.RESET_ALL}")
                     
                     # Emir gerçekleşti - Status'u active yap
                     update_data = {
@@ -777,11 +834,19 @@ class BinanceTradeExecutor:
                                 price=float(filled_order['price']), 
                                 notes="Limit buy order executed"
                             )
+                elif filled_order == "canceled":
+                    update_data = {
+                        'status': 'canceled',
+                        "exit_reason": "time_out"
+                    }
 
+                    self.db.update_position(Config.SYMBOL, update_data)
+                    print(f"{Fore.YELLOW}Position updated to canceled status ⚠️{Style.RESET_ALL}")
                 # Aktif pozisyonları yönet
-                if self.active_position and not has_pending_orders:
+                if self.active_position and not has_pending_orders and Config.STOP_SELL==False:
+                    
                     action = self.manage_active_trade(analyzed_data)
-                    if action == 'SELL':
+                    if action == 'SELL'or signal == "part_sell":
                         self.close_position('SELL')
                 elif not has_pending_orders:
                     coin_balance = self.get_symbol_balance(Config.SYMBOL)
@@ -796,6 +861,8 @@ class BinanceTradeExecutor:
                 # Sonraki döngü için bekle
                 minute = int(Config.LENGTH_BAR / 60)
                 print(f"\n{Fore.YELLOW}Gelecek güncellemeye:{minute} dakika var. {Style.RESET_ALL}")
+                print(f"\n{Fore.BLUE}🔥Toplam trade sayısı:⚡ {self.trade_count} ⚡  {Style.RESET_ALL}")
+
                 progress_bar(Config.LENGTH_BAR)
 
                 """for remaining in range(60, 0, -1):
@@ -807,7 +874,7 @@ class BinanceTradeExecutor:
             except Exception as e:
                 print(f"{Fore.RED}Error in trade cycle: {str(e)}{Style.RESET_ALL}")
                 logging.error(f"Error in trade cycle: {e}")
-                time.sleep(60)
+                time.sleep(Config.LENGTH_BAR)
         
 if __name__ == "__main__":
     API_KEY = os.getenv("API_KEY_")
@@ -829,7 +896,7 @@ if __name__ == "__main__":
     selected_coin = input("Bu  analizden sonra hangi coin ile işlem yapmak istersiniz? ")
     
     Config.SYMBOL = selected_coin.upper()"""
-    trader = BinanceTradeExecutor(API_KEY, API_SECRET)
+    
    
     """position_manager = InitialPositionManager(
     client=trader.client,
@@ -841,6 +908,8 @@ if __name__ == "__main__":
     position_manager.add_manual_position(
         symbol='SHIB',
         entry_price=0.00001578,order_id ="MANUAL")"""
-    
+    trader = BinanceTradeExecutor(API_KEY, API_SECRET)
     trader.execute_trade_cycle()
+   
+   
     
