@@ -92,6 +92,8 @@ The bot structure is divided into several key modules:
 - **sqllite.py** - Connects to an SQLite database to view stored trade positions.
 - **tick_size.py** - Retrieves the tick size (minimum price movement) for a specific trading pair.
 
+# To improve buy conditions threshold check this [Optimizasiton Threshold](https://github.com/klncgty/Cryptocurrency-Trading-Bot__Optimization) repo.
+
 The project uses internal organization modules, configuration constants (via a `Config` class), and exception handling to ensure resilience during trading.
 
 ---
