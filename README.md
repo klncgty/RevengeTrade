@@ -82,7 +82,7 @@ The bot structure is divided into several key modules:
 - **LimitSellOrderExecutor and limitBuyOrderExecutor:** Facilitate placing and managing limit orders on Binance.
 - **PositionCostCalculator:** Computes current trade profitability, position size, and other cost-related metrics.
 - **EMARejectStrategy:** Implements the logic to track EMA rejections to help determine exit decisions.
-## helpers File Descriptions
+## helpers Folder Descriptions
 
 - **binance_api_validator.py** - Validates Binance API credentials and checks for required permissions.
 - **min_trade.py** - Retrieves the minimum trade size for a specific trading pair.
