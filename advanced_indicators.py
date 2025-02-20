@@ -21,8 +21,8 @@ class AdvancedIndicators:
         data['sar'] = talib.SAR(data['high'], data['low'], acceleration=0.02, maximum=0.2)
         
         # Fibonacci Seviyeleri
-        recent_high = data['high'].rolling(50).max().iloc[-1]
-        recent_low = data['low'].rolling(50).min().iloc[-1]
+        recent_high = data['high'].rolling(200).max().iloc[-1]
+        recent_low = data['low'].rolling(200).min().iloc[-1]
         data['fib_38'] = recent_high - (recent_high - recent_low) * 0.382
         data['fib_62'] = recent_high - (recent_high - recent_low) * 0.618
         
@@ -38,43 +38,62 @@ class AdvancedIndicators:
         # ATR hesapla
         atr = talib.ATR(high, low, close, timeperiod=Config.atr_period_supertrend)
         hl2 = (high + low) / 2
-
+        
         # Temel üst ve alt bantlar
+        basic_upperband = hl2 + (Config.multiplier_supertrend * atr)
+        basic_lowerband = hl2 - (Config.multiplier_supertrend * atr)
+
+        # Temel bantlar
         basic_upperband = hl2 + (Config.multiplier_supertrend * atr)
         basic_lowerband = hl2 - (Config.multiplier_supertrend * atr)
 
         final_upperband = [0] * len(data)
         final_lowerband = [0] * len(data)
-        supertrend = [True] * len(data)  # True = yükseliş trendi, False = düşüş trendi
-
+        supertrend = [True] * len(data)
+        current_trend = [True] * len(data)
+        # İlk değerler
         final_upperband[0] = basic_upperband.iloc[0]
         final_lowerband[0] = basic_lowerband.iloc[0]
-        supertrend[0] = True  # İlk mumda varsayılan olarak yükseliş trendi
-
+        current_trend = [True] * len(data)
+        trend_messages = [""] * len(data)
+        last_trend_change = None
         for i in range(1, len(data)):
-            # Üst bantın güncellenmesi
-            if basic_upperband.iloc[i] < final_upperband[i-1] or close.iloc[i-1] > final_upperband[i-1]:
-                final_upperband[i] = basic_upperband.iloc[i]
-            else:
-                final_upperband[i] = final_upperband[i-1]
+            current_price = close.iloc[i]
+            previous_price = close.iloc[i-1]
+            price_change = abs(current_price - previous_price) / previous_price * 100
 
-            # Alt bantın güncellenmesi
-            if basic_lowerband.iloc[i] > final_lowerband[i-1] or close.iloc[i-1] < final_lowerband[i-1]:
-                final_lowerband[i] = basic_lowerband.iloc[i]
-            else:
-                final_lowerband[i] = final_lowerband[i-1]
+            if current_trend[i-1]:  # Uptrend
+                final_upperband[i] = min(basic_upperband.iloc[i], final_upperband[i-1])
+                final_lowerband[i] = max(basic_lowerband.iloc[i], final_lowerband[i-1])
+                
+                if current_price < final_lowerband[i]:
+                    current_trend[i] = False
+                    last_trend_change = f"TREND CHANGE: Uptrend → Downtrend at price: {current_price:.2f}, Change: %{price_change:.2f}"
+                else:
+                    current_trend[i] = True
+            else:  # Downtrend
+                final_upperband[i] = max(basic_upperband.iloc[i], final_upperband[i-1])
+                final_lowerband[i] = min(basic_lowerband.iloc[i], final_lowerband[i-1])
+                
+                if current_price > final_upperband[i]:
+                    current_trend[i] = True
+                    last_trend_change = f"TREND CHANGE: Downtrend → Uptrend at price: {current_price:.2f}, Change: %{price_change:.2f}"
+                else:
+                    current_trend[i] = False
 
-            # SuperTrend sinyalinin belirlenmesi
-            if close.iloc[i] <= final_upperband[i]:
-                supertrend[i] = False  # Düşüş trendi sinyali
-            else:
-                supertrend[i] = True   # Yükseliş trendi sinyali
+            
+            supertrend[i] = current_trend[i]
+             # Only store the trend change message
+            trend_messages[i] = last_trend_change if current_trend[i] != current_trend[i-1] else ""
 
         data['supertrend'] = supertrend
         data['final_upperband'] = final_upperband
         data['final_lowerband'] = final_lowerband
+        data['trend_messages'] = trend_messages
         data['linear_reg_forecast'] = talib.LINEARREG(data['close'], timeperiod=14)
         
+        
         return data
-    
+        
+       
     

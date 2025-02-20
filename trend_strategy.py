@@ -11,7 +11,9 @@ from dataclasses import dataclass
 import colorama
 from colorama import Fore, Style
 import logging
-
+import talib
+from chyper_pattern import CypherPattern, CypherPatternDetector
+from part_by_part import PartByPartStrategy
 colorama.init()
 
 
@@ -80,7 +82,8 @@ class TrendStrategy:
         self.daily_high = float('-inf')
         self.PARTIAL_SELL_PERCENTAGE = 40  # Sell 40% of remaining position
         self.ema_reject = EMARejectStrategy()
-
+        self.cypher_detector = CypherPatternDetector()
+        self.part_strategy = PartByPartStrategy()
     def update_daily_high(self, current_price: float):
         """Updates the daily high price"""
         self.daily_high = max(self.daily_high, current_price)
@@ -304,9 +307,88 @@ class TrendStrategy:
         except Exception as e:
             logging.error(f"Error checking order status: {e}")
     
-    def generate_signal(self, data: pd.DataFrame) -> Dict:
+    def calculate_weighted_buy_score(self, data: pd.DataFrame) -> Tuple[float, Dict]:
+        """
+        Ağırlıklı alım skoru hesaplama
+        Returns: (toplam_skor, detaylar)
+        """
+        try:
+            current_price = float(data['close'].iloc[-1])
+            predicted_price = self.predict_next_candle_price(data)
+            
+            # Trend göstergeleri (0.4 ağırlık)
+            ema_conditions = (
+                abs(current_price - data['ema_50'].iloc[-1]) / data['ema_50'].iloc[-1] < 0.01 or
+                abs(current_price - data['ema_200'].iloc[-1]) / data['ema_200'].iloc[-1] < 0.015 or
+                data['ema_50'].iloc[-1] > data['ema_50'].iloc[-5]
+            )
+            
+            trend_signals = {
+                'ema_conditions': (ema_conditions, 0.15),
+                'supertrend': (data['supertrend'].iloc[-1], 0.15),
+                'forecast': (current_price < data['linear_reg_forecast'].iloc[-1], 0.10)
+            }
+            
+            # Momentum göstergeleri (0.3 ağırlık)
+            rsi_check = data['rsi'].iloc[-1] < Config.RSI_BUY
+            macd = data['macd'].iloc[-1]
+            macd_signal = data['macd_signal'].iloc[-1]
+            macd_momentum = (macd > macd_signal and 
+                           abs(macd - macd_signal) > abs(data['macd'].iloc[-2] - data['macd_signal'].iloc[-2]))
+            
+            momentum_signals = {
+                'rsi_div': (rsi_check or self.detect_divergence(data), 0.15),
+                'macd': (macd_momentum, 0.15)
+            }
+            
+            # Hacim göstergeleri (0.2 ağırlık)
+            volume_signals = {
+                'volume_spike': (data['volume_spike'].iloc[-1], 0.20)
+            }
+            
+            # Destek/Direnç göstergeleri (0.1 ağırlık)
+            upper_line, lower_line = self.calculate_channel_lines(data)
+            channel_width = upper_line.iloc[-1] - lower_line.iloc[-1]
+            channel_position = (current_price - lower_line.iloc[-1]) / channel_width
+            near_lower = channel_position < 0.2
+            
+            support_signals = {
+                'fib_support': (
+                    current_price >= data['fib_38'].iloc[-1] or 
+                    current_price >= data['fib_62'].iloc[-1], 
+                    0.05
+                ),
+                'channel_support': (near_lower, 0.05)
+            }
+            
+            # Tüm sinyalleri birleştir
+            all_signals = {**trend_signals, **momentum_signals, 
+                         **volume_signals, **support_signals}
+            
+            # Toplam skoru hesapla
+            total_score = 0
+            signal_details = {}
+            
+            for signal_name, (condition, weight) in all_signals.items():
+                score = weight if condition else 0
+                total_score += score
+                signal_details[signal_name] = {
+                    'active': condition,
+                    'weight': weight,
+                    'contribution': score
+                }
+            
+            return total_score, signal_details
+            
+        except Exception as e:
+            self.logger.error(f"Ağırlıklı skor hesaplama hatası: {str(e)}")
+            return 0, {}
+    
+    def generate_signal(self, data: pd.DataFrame, data_4h=None) -> Dict:
        
         try:
+            if len(data) < 1:
+                return "hold"
             # Dinamik hedef hesaplaması
             long_target, short_target = self.risk_manager.calculate_dynamic_target(data)
             
@@ -314,8 +396,15 @@ class TrendStrategy:
             if long_target is None or short_target is None:
                 self.logger.error("Hedef hesaplama başarısız")
                 return "hold"
+            # Check if data has at least one row
             
             current_price = float(data['close'].iloc[-1])
+            # Part by part strateji kontrolü
+            
+        
+                # Satış kontrolü
+                
+   
             self.update_daily_high(current_price)
             
             # EMA rejection kontrolü: Eğer aktif pozisyon varsa ve EMA rejection tetikleniyorsa, satış sinyali ver.
@@ -348,6 +437,11 @@ class TrendStrategy:
                     print(f"Selling {self.PARTIAL_SELL_PERCENTAGE}% of remaining position")
                     print(f"Sell Quantity: {sell_quantity:.8f}")
                     return "short"
+                
+                
+           
+            
+            
             
             # Güvenlik kontrolü: Eğer güvenli değilse hiçbir işlem yapılmadan hold sinyali ver.
             safety_check = self.risk_check.check_sell_safety(Config.SYMBOL, current_price)
@@ -361,6 +455,17 @@ class TrendStrategy:
             macd_signal = data['macd_signal'].iloc[-1]
             volume_spike = data['volume_spike'].iloc[-1]
             current_close = data['close'].iloc[-1]
+            
+            strong_signal_conditions = {
+                        'rsi_oversold': rsi < 30,  # Güçlü aşırı satım
+                        'fib_support': (
+                            current_price >= data['fib_62'].iloc[-1] *0.98 and  
+                            current_price <= data['fib_62'].iloc[-1] * 1.02  
+                        ),
+                        'supertrend_bullish': data['supertrend'].iloc[-1],  # Supertrend yükseliş sinyali
+                        'volume_confirmation': (data['volume'].iloc[-1] > data['volume'].rolling(20).mean().iloc[-1] * 1.5 and  (data['volume'].iloc[-1] < data['volume'].rolling(20).max().iloc[-1] * 0.8))  # Ani pump'ı filtrele  # Hacim teyidi
+                    }
+        
             
             # Kanal analizi
             upper_line, lower_line = self.calculate_channel_lines(data)
@@ -393,7 +498,7 @@ class TrendStrategy:
                         print(f"\n{Fore.GREEN}=== Emergency Sell Signal ==={Style.RESET_ALL}")
                         print(f"Weekly High: {weekly_high:.8f}")
                         print(f"Profit: {profit_percentage:.2f}%")
-                        return 'short'
+                        return 'emergency_sell'
                 
                 # Teknik Satış Koşulları
                 rsi_sell_condition = rsi > Config.RSI_SELL
@@ -408,6 +513,21 @@ class TrendStrategy:
                     return 'short'
             
             # ALIŞ KOŞULLARI
+            cypher_pattern = self.cypher_detector.detect_cypher(data)
+            cypher_condition = cypher_pattern is not None and cypher_pattern.confidence > 0.8
+            
+            # eğer 4 saatlikte düşüş trendi kırılmış ve yükselişe geçmişse
+            data_4h['ema_50'] = talib.EMA(data_4h['close'], timeperiod=50)
+            data_4h['ema_200'] = talib.EMA(data_4h['close'], timeperiod=200)
+            four_hour_low = data_4h['low'].rolling(window=4).min().iloc[-1] # 4 saatlik en düşük fiyat
+            # 5 dakikalık zaman diliminde fiyatın 4 saatlik dibe ne kadar yakın olduğunu ölç
+            
+            threshold = four_hour_low * 0.002  # %0.2'lik bir tolerans belirle
+            # Trend kırılma koşulu
+            trend_kırıldı_4h = (
+                data_4h['ema_50'].iloc[-1] > data_4h['ema_200'].iloc[-1] and
+                data_4h['ema_50'].iloc[-1] > data_4h['ema_50'].iloc[-5]
+            )
             supertrend_condition = data['supertrend'].iloc[-1]
             rsi_check = rsi < Config.RSI_BUY
             macd_momentum = (macd > macd_signal and 
@@ -418,32 +538,67 @@ class TrendStrategy:
                 data['ema_50'].iloc[-1] > data['ema_50'].iloc[-5]
             )
             forecast_condition = current_price < data['linear_reg_forecast'].iloc[-1]
-            buy_conditions = (
-                (rsi_check or divergence) and      # RSI veya pozitif divergence
-                (macd_momentum or volume_spike) and  # Momentum veya hacim artışı
-                ema_conditions and                   # EMA yakınlığı
-                near_lower and                       # Kanalın alt sınırına yakınlık
-                (fib_support_38 or fib_support_62) and  # Fibonacci desteği
-                current_price <= predicted_price and
-                supertrend_condition      and forecast_condition           # Fiyat tahminine uyum
-            )
-            print(f"{Fore.CYAN}Buy_Conditions: {buy_conditions}{Style.RESET_ALL}")
+            weights = [
+                Config.RSI_DIVERGENCE_S,  # RSI/Divergence - en önemli momentum göstergesi
+                Config.MACD_VOLUME_S,  # MACD/Volume - momentum teyidi
+                Config.EMA_CONDITION_S,  # EMA conditions - trend göstergesi
+                Config.NEAR_LOWER_CHANNEL_S,  # Near lower channel - fiyat pozisyonu
+                Config.FIBONACCI_SUPPORT_S,  # Fibonacci support - teknik destek
+                Config.PRICE_PREDICTION_TAHMIN_S,  # Price prediction - tahmin
+                Config.SUPER_TREND_S,  # Supertrend - güçlü trend göstergesi
+                Config.FORECAST_S,
+                Config.STRONG_SIGNAL_S,
+                Config.TREND_KIRILDI_4H_S,
+                Config.CYPHER_PATTERN_WEIGHT
+                
+            ]
+            conditions  = [
+                rsi_check or divergence,  
+                macd_momentum or volume_spike,  
+                ema_conditions,  
+                near_lower,  
+                fib_support_38 or fib_support_62,  
+                current_price <= predicted_price,  
+                supertrend_condition,  
+                forecast_condition ,
+                all(strong_signal_conditions.values()),
+                trend_kırıldı_4h,
+                cypher_condition
+                ]
+            # Ağırlıklı skor hesaplama
+            weighted_score = sum(w * (1 if cond else 0) for w, cond in zip(weights, conditions))
+            if conditions[8]:
+                weighted_score += 2.0
+            
+            max_possible_score = sum(weights)  # 7.7
+            score_percentage = (weighted_score / max_possible_score) * 100
+            print(f"\n{Fore.CYAN}=== Weighted Buy Score: {score_percentage:.2f}% ==={Style.RESET_ALL}")
+            condition_names = [
+                "RSI/Divergence",
+                "MACD/Volume",
+                "EMA Conditions",
+                "Channel Position",
+                "Fibonacci Support",
+                "Price Prediction",
+                "SuperTrend",
+                "Forecast",
+                "Strong Signal",
+                "Trend_Kırıldı_4h",
+                "Cypher Condition"
+            ]
+            for name, condition, weight in zip(condition_names, conditions, weights):
+                status = '✓' if condition else '✗'
+                score = weight if condition else 0
+                print(f"{name} ({weight:.1f}): {status} -> {score:.1f}")
+            
+            print(f"\nTotal Score: {weighted_score:.1f}/{max_possible_score:.1f} ({score_percentage:.1f}%)")
 
-            # Alış koşullarını detaylı yazdırma
-            print(f"\n{Fore.CYAN}=== Buy Conditions ==={Style.RESET_ALL}")
-            print(f"RSI < {Config.RSI_BUY}: {'✓' if rsi_check else '✗'} ({rsi:.2f})")
-            print(f"MACD/Volume: {'✓' if (macd_momentum or volume_spike) else '✗'}")
-            print(f"EMA Conditions: {'✓' if ema_conditions else '✗'}")
-            print(f"Near Lower Channel: {'✓' if near_lower else '✗'}")
-            print(f"Price Prediction: {'✓' if current_price <= predicted_price else '✗'}")
-            print(f"SuperTrend (Uptrend): {'✓' if supertrend_condition else '✗'}")
-            print(f"Forecast condition: {'✓' if forecast_condition else '✗'}")
-            print(f"Fibonacci Support: {'✓' if fib_support_38 or fib_support_62 else '✗'}")
-            
-            
-            # Eğer alış koşulları sağlanıyorsa, risk/ödül kontrolü yapılarak alış sinyali üretilir.
-            if buy_conditions:
-                logging.info("Buy conditions met, generating long signal.")
+            MIN_SCORE_PERCENTAGE = Config.BUY_CONDITIONS_LIMIT
+            conditions_met = score_percentage >= MIN_SCORE_PERCENTAGE
+            if conditions_met:
+                confidence = "Yüksek" if score_percentage >= 80 else "Orta"
+                print(f"\n{Fore.GREEN}\033[1m{confidence} güvenilirlikli alım sinyali ✅ ({score_percentage:.1f}%){Style.RESET_ALL}\033[0m")
+   
                 target_price = upper_line.iloc[-1]
                 stop_loss = current_price - (channel_width * 0.3)
                 risk = current_price - stop_loss
@@ -457,17 +612,27 @@ class TrendStrategy:
                     print(f"Risk/Reward: {reward/risk:.2f}")
                     return "long"
                 else:
-                    print(f"\n{Fore.YELLOW}Buy conditions met but R/R ratio insufficient{Style.RESET_ALL}")
+                    print(f"\n{Fore.RED}Alım sinyali var ancak risk/ödül: {Fore.YELLOW}{reward / risk:.3f}{Style.RESET_ALL}  {Fore.RED}oranı yetersiz ⚠️.{Style.RESET_ALL}")
                     return "hold"  # Risk/Ödül oranı yeterli değilse "hold" döndür
-
-            # Buraya sadece buy_conditions SAĞLANMADIĞINDA girsin
-            logging.info("Buy conditions not met, no long signal generated.")
+            #Hem agresif hem de konservatif stratejileri birleştiriyor
+            
+            elif 10 < score_percentage < 55 and current_price <= four_hour_low + threshold:
+                buy_signal = self.part_strategy.check_buy_conditions(current_price,four_hour_low=True)
+                if buy_signal["should_buy"]:
+                    print(f"\n{Fore.YELLOW}📉 4 saatlik destek seviyesine yakın, alım fırsatı olabilir:{Style.RESET_ALL} {current_price}")
+                    return "part_buy"
+                else:
+                    print(f"\n{Fore.RED}Düşük alım skoru fakat haftalık en düşük değil fiyat. - Partbuy yapılamadı.{Style.RESET_ALL}")
+                    return "hold"  # Eğer part-buy da başarısızsa "hold" dön
+                    
+              
+            print(f"\n{Fore.YELLOW}Yetersiz alım skoru: {score_percentage:.1f}% (Minimum: {MIN_SCORE_PERCENTAGE}%){Style.RESET_ALL}")
             return "hold"
 
         except Exception as e:
             self.logger.error(f"Signal üretiminde hata: {str(e)}")
             return "hold"
-
+        
     def update_position_after_partial_sell(self, sold_quantity: float, sell_price: float):
         """Updates position information after a partial sell"""
         if self.position_info:
@@ -568,13 +733,13 @@ class TrendStrategy:
             channel_width = upper_line.iloc[-1] - lower_line.iloc[-1]
             channel_position = (current_price - lower_line.iloc[-1]) / channel_width
             
-            print("\n=== Channel Analysis ===")
+            print("\n\033[1;34m=== Channel Analysis ===\033[0m")
             print(f"Current Price: {current_price:.8f}")
             print(f"Upper Channel: {upper_line.iloc[-1]:.8f}")
             print(f"Lower Channel: {lower_line.iloc[-1]:.8f}")
             print(f"Channel Width: {channel_width:.8f}")
             print(f"Channel Position: {channel_position:.2%}")
-            print(f"Predicted Next Price: {predicted_price:.8f}")
+            print(f"\033[1;36mPredicted Next Price: \033[1;34m{predicted_price:.8f}\033[0m")
             print(f"Expected Move: {((predicted_price/current_price)-1)*100:.2f}%")
             print("=====================")
             

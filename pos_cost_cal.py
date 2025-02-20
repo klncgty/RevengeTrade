@@ -29,6 +29,23 @@ class PositionCostCalculator:
         except Exception as e:
             self.logger.error(f"Error getting current price: {e}")
             return 0.0   
+    def get_total_balance(self, symbol: str) -> float:
+        """
+        Toplam coin miktarını hesaplar (serbest + kilitli)
+        """
+        try:
+            account_info = self.client.get_account()
+            asset = next((item for item in account_info['balances'] 
+                        if item['asset'] == symbol), None)
+            if asset:
+                free = float(asset['free'])
+                locked = float(asset['locked'])
+                return free + locked
+            return 0.0
+        except Exception as e:
+            self.logger.error(f"Error getting total balance: {e}")
+            return 0.0
+    
     def check_profit_target(self, symbol: str) -> Tuple[bool, float, float]:
         """
         Kar hedefine ulaşılıp ulaşılmadığını kontrol eder

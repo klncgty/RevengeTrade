@@ -5,7 +5,7 @@ from binance.enums import ORDER_TYPE_LIMIT, TIME_IN_FORCE_GTC
 import logging
 from datetime import datetime
 from typing import Optional, Dict, Tuple
-
+import decimal
 class LimitSellOrderExecutor:
     def __init__(self, client: Client):
         self.client = client
@@ -63,10 +63,13 @@ class LimitSellOrderExecutor:
             if not is_valid:
                 self.logger.error(f"Balance validation failed: {message}")
                 return None
+                
 
-            # Format values according to exchange requirements
-            formatted_quantity = int(quantity)  # or use proper decimal formatting based on exchange rules
-            formatted_price = "{:.8f}".format(price)
+            tick_size = decimal.Decimal('0.00000010')
+            price = decimal.Decimal(price)
+            
+            formatted_quantity = str(int(quantity))
+            formatted_price =  str((price // tick_size) * tick_size)
 
             # Place the order
             order = self.client.create_order(
@@ -84,9 +87,9 @@ class LimitSellOrderExecutor:
         except BinanceAPIException as e:
             error_msg = f"Binance API error placing limit sell order: {e.message}"
             if e.code == -2010:  # Insufficient balance error
-                error_msg = f"Insufficient balance for limit sell order. Required: {quantity} {symbol}"
+                error_msg = f"Insufficient balance for limit sell order. Required: {formatted_quantity} {symbol}"
             elif e.code == -1013:  # Invalid quantity error
-                error_msg = f"Invalid quantity for limit sell order: {quantity} {symbol}"
+                error_msg = f"Invalid quantity for limit sell order: {formatted_quantity} {symbol}"
             
             self.logger.error(error_msg)
             return None

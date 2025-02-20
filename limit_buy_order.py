@@ -7,6 +7,9 @@ import colorama
 from colorama import Fore, Style
 from config import Config
 from trade_database import TradePositionManager
+from tick_size import get_tick_size
+import math
+
 class limitBuyOrderExecutor:
     def __init__(self, client, logger=None):
         self.client = client
@@ -16,7 +19,26 @@ class limitBuyOrderExecutor:
         self.buy_order_time = None
         self.prediction_threshold = 0.001  # %0.2 minimum fiyat farkı
         self.order_timeout = Config.BUY_ORDER_TIMEOUT  # 2 dakika (saniye cinsinden)
-        
+    
+    def get_adjusted_price(self,symbol: str, order_price: float) -> float:
+                        """
+                        Verilen sembolün tick size'ını alıp fiyatı uygun şekilde yuvarlar.
+                        """
+                        try:
+                            tick_size = get_tick_size(symbol)  # Tick size'ı al
+                            
+                            if not tick_size:
+                                raise ValueError(f"Tick size alınamadı: {symbol}")
+
+                            # Tick size'a göre fiyatı yuvarla
+                            adjusted_price = math.floor(order_price / tick_size) * tick_size
+                            
+                            return adjusted_price
+                        
+                        except Exception as e:
+                            print(f"Hata: {e}")
+                            return order_price  # Hata durumunda orijinal fiyatı döndür
+    
     
     def place_limit_buy(self, symbol: str, quantity: float, current_price: float, 
                        predicted_price: float = None, entry_price: float = None) -> Optional[Dict]:
@@ -44,7 +66,11 @@ class limitBuyOrderExecutor:
                 order_price = entry_price
                 order_type = "Standard"
 
+          
+            
             formatted_price = "{:.8f}".format(order_price)
+            #symbol_formatted = Config.SYMBOL+"USDT"
+            #formatted_price = self.get_adjusted_price(symbol_formatted, order_price)
             formatted_quantity = int(quantity)
 
             order = self.client.create_order(
@@ -102,7 +128,10 @@ class limitBuyOrderExecutor:
             if time_elapsed.total_seconds() > self.order_timeout:
                 print(f"{Fore.YELLOW}Order timeout reached ({Config.BUY_ORDER_TIMEOUT/60} minutes){Style.RESET_ALL}")
                 self.cancel_pending_buy_order(symbol)
-                return None
+                
+                return "canceled"
+                
+
 
             # Kalan süreyi göster
             remaining_seconds = self.order_timeout - time_elapsed.total_seconds()
