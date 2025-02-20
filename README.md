@@ -1,6 +1,6 @@
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-Support%20Me-orange)](https://buymeacoffee.com/cgtyklnc1t)
 
-# C-TRADING BOT
+# C-T BOT
 
    𝓑𝓮𝓱𝓲𝓷𝓭 𝓽𝓱𝓲𝓼 𝓫𝓸𝓽, 𝓽𝓱𝓮𝓻𝓮 𝓲𝓼 𝓶𝓸𝓻𝓮 𝓽𝓱𝓪𝓷 𝓳𝓾𝓼𝓽 𝓬𝓸𝓭𝓮. 𝓑𝓮𝓷𝓮𝓪𝓽𝓱 𝓽𝓱𝓲𝓼 𝓫𝓸𝓽, 𝓽𝓱𝓮𝓻𝓮 𝓲𝓼 𝓫𝓵𝓸𝓸𝓭, 𝓼𝔀𝓮𝓪𝓽, 𝓽𝓮𝓪𝓻𝓼, 𝓪𝓷𝓭 𝓪𝓷 𝓲𝓭𝓮𝓪… 𝓐𝓷𝓭 𝓲𝓭𝓮𝓪𝓼 𝓪𝓻𝓮 𝓾𝓷𝓼𝓽𝓸𝓹𝓹𝓪𝓫𝓵𝓮.
 
