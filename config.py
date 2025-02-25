@@ -1,30 +1,35 @@
 from typing import List
 
 class Config:
-    SYMBOL = "SHIB"                    # işlem yapılacak coin
-    TIMEFRAME = "5m"                        # 1m , 3m , 5m , 15m , 30m , 1h , 4h , 1d , 1w
+    SYMBOL = "1MBABYDOGE"                    # işlem yapılacak coin
+    TIMEFRAME = "15m"                        # 1m , 3m , 5m , 15m , 30m , 1h , 4h , 1d , 1w
     RISK_PER_TRADE = 1.0                         # her trade için risk oranı
     MIN_RISK_REWARD = 1.5                            # risk ödül oranı
     ATR_PERIOD = 14                                # ATR indikatörü için periyot
     TRAILING_STOP_PCT = 0.5                                       # stop loss oranı
     VOLUME_SPIKE_THRESHOLD = 0.25                              # hacim artışı eşik değeri
-    RSI_BUY = 55          # alım için RSI eşik değeri
+    RSI_BUY = 40         # alım için RSI eşik değeri
     RSI_SELL = 50               # satış için RSI eşik değeri
     DATABASE_URL = 'sqlite:///trades.db'             # veritabanı bağlantı adresi
     PREDICT_BASED_ORDERS = True            # True ise tahminlere göre alım satım yapar
     ORDER_TIMEOUT = 120                    # satış emri verildikten sonra kaç saniye sonra iptal edileceği
     BUY_ORDER_TIMEOUT = 60 # alım emri verildikten sonra kaç saniye sonra iptal edileceği
-    TIME_PERIOD_RSI = 7
+    TIME_PERIOD_RSI = 21
     TIME_PERIOD_MACD = 7
     TIME_PERIOD_ADX = 7
+    fib_tolerance = 0.025  # %2.5 tolerans
+    ACCE_SAR = 0.0974
+    MAX_SAR =  0.1
+    ADX_THRESHOLD = 40
+    TIME_SYNC = 15
     
     #satış emir özellikleri
     EMERGENCY_SELL_ENABLED = True  # True ise zarar durumunda satış yapar
     EMERGENCY_SELL_PERCENTAGE = 1.5 # zarar durumunda satış yapılacak oran
-    PROFIT_TARGET = 0.9 # kar hedefi
-    LENGTH_BAR = 300             # progress bar uzunluğu
+    PROFIT_TARGET = 2.0 # kar hedefi
+    LENGTH_BAR = 900             # progress bar uzunluğu
     atr_period_supertrend = 14   # ATR periyodu
-    multiplier_supertrend = 2.8     # üst ve alt bantlar için çarpan
+    multiplier_supertrend = 2.8  # üst ve alt bantlar için çarpan
     
     
     SYSTEM_PROMPT = """Sen, kripto para piyasalarında derin deneyime sahip analitik bir uzmansın.
@@ -38,11 +43,12 @@ class Config:
     
     
     COINS: List[str] = ["BNB", "NULS", "NEO", "LINK", "IOTA", "COS", "HOT", "RVN", "SHIB", "SLP", "XEC", "SPELL", "BTTC", "PEPE", "BEAMX", "NOT", "NEIRO"]
-    BUY_CONDITIONS_LIMIT = 55 # alım koşullarının sayısı MAX 8   
+    BUY_CONDITIONS_LIMIT = 33 # alım koşullarının sayısı MAX 8   
+    FECI_THRESHOLD = 0.15983573519602506
 
     
     # AĞIRLIKLANDIRMA - BUY İÇİN
-    RSI_DIVERGENCE_S = 1.4  # Volatil piyasalarda divergence %23 daha etkili (Binance verileri).
+    RSI_DIVERGENCE_S = 1.5  # Volatil piyasalarda divergence %23 daha etkili (Binance verileri).
     MACD_VOLUME_S = 0.7   #Hacim spike'ları manipülasyona açık (FTX olayları).
     EMA_CONDITION_S = 1.2  #Özellikle 50-200 EMA kesişimleri trendde %78 doğruluk oranına sahip.
     NEAR_LOWER_CHANNEL_S = 0.4  #Kanal dip/tepe tespiti BTC'de %65 hata payıyla çalışıyor.
@@ -53,12 +59,15 @@ class Config:
     STRONG_SIGNAL_S = 1.6
     TREND_KIRILDI_4H_S = 1.2
     CYPHER_PATTERN_WEIGHT = 1.5
+    FECI_S = 1.4
+    ADX_s = 1.5
     
     # SATIŞ BEKLETME - YÜKSEK KAR HEDEFİ İÇİN
     STOP_SELL = False
     
     # PARÇALI ALIM SATIM
     PART_SELL = False
+    
     
     
     
