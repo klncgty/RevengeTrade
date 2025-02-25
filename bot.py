@@ -506,9 +506,9 @@ class BinanceTradeExecutor:
                 target_reached, profit_percentage, _ = self.position_calculator.check_profit_target(Config.SYMBOL)
                 if target_reached:
                     if profit_percentage > 3.0:
-                        print(f"\033[1;32m🔥🔥🔥En yüksek kar oranına ulaşıldı🎯: {profit_percentage:.2f}% (target: 3%)\033[0m")
+                        print(f"\033[1;32m🔥🔥🔥En yüksek kar oranına ulaşıldı🎯: {profit_percentage:.2f}% (target: {Config.PROFIT_TARGET}%)\033[0m")
                     elif profit_percentage > 1.0:
-                        print(f"\033[1;32m🔥🔥Orta hedefli kar oranına ulaşıldı🎯: {profit_percentage:.2f}% (target: 1.4%)\033[0m")
+                        print(f"\033[1;32m🔥🔥Orta hedefli kar oranına ulaşıldı🎯: {profit_percentage:.2f}% (target: {Config.PROFIT_TARGET}%)\033[0m")
                     elif profit_percentage > 0.5:
                         print(f"\033[1;32m🔥Düşük hedefli kar oranına ulaşıldı🎯: {profit_percentage:.2f}% (target: {Config.PROFIT_TARGET}%)\033[0m")
                     
@@ -695,7 +695,18 @@ class BinanceTradeExecutor:
                 print("[ERROR] Sell order was not placed.")
         except Exception as e:
             logging.error(f"Error closing position: {e}")
-
+    
+    def wait_for_next_timeframe(self):
+        """Botun tam timeframe (5, 15, 30 dk) dilimlerine senkronize olmasını sağlar."""
+        now = datetime.now()
+        minutes_to_wait = Config.TIME_SYNC - (now.minute % Config.TIME_SYNC)  # Kaç dakika beklemeli?
+        next_run_time = now + timedelta(minutes=minutes_to_wait)
+        next_run_time = next_run_time.replace(second=0, microsecond=0)  # Tam dakikaya yuvarla
+        wait_seconds = (next_run_time - now).total_seconds()
+        
+        print(f"Bot {next_run_time.strftime('%H:%M:%S')}'de çalışacak...")
+        time.sleep(wait_seconds)
+    
     def execute_trade_cycle(self):
         """Ana ticaret döngüsünü yürütür ve veritabanı güncellemelerini yapar."""
         print(f"{Fore.CYAN}Trading Bot Başlatılıyor 🔥🔥🔥{Style.RESET_ALL}")
@@ -710,11 +721,17 @@ class BinanceTradeExecutor:
                 # Market verilerini al ve analiz et
                 data = self.get_historical_data()
                 data_4h = self.get_historical_data(interval=Client.KLINE_INTERVAL_4HOUR)
-                if data is None:
+                data_50_mum  = self.get_historical_data(lookback="50")
+                data_200_mum = self.get_historical_data(lookback="200")
+                data_500_mum = self.get_historical_data(lookback="500")
+                if data is None or data_4h is None or data_50_mum is None or data_200_mum is None or data_500_mum is None:
                     continue
                     
                 analyzed_data = self.strategy.analyze_market(data)
-                signal = self.strategy.generate_signal(analyzed_data, data_4h)
+                data_50_mum_analyzed = self.strategy.analyze_market(data_50_mum)
+                data_200_mum_analyzed = self.strategy.analyze_market(data_200_mum)
+                data_500_mum_analyzed = self.strategy.analyze_market(data_500_mum)
+                signal = self.strategy.generate_signal(analyzed_data, data_4h,data_50_mum_analyzed,data_200_mum_analyzed,data_500_mum_analyzed)
                 self.print_market_status(analyzed_data, signal)
                 
                 current_price = float(analyzed_data['close'].iloc[-1])
@@ -863,11 +880,11 @@ class BinanceTradeExecutor:
                 print(f"\n{Fore.YELLOW}Gelecek güncellemeye:{minute} dakika var. {Style.RESET_ALL}")
                 print(f"\n{Fore.BLUE}🔥Toplam trade sayısı:⚡ {self.trade_count} ⚡  {Style.RESET_ALL}")
 
-                progress_bar(Config.LENGTH_BAR)
-
-                """for remaining in range(60, 0, -1):
-                    print(f"\r{Fore.YELLOW}{remaining} seconds{Style.RESET_ALL}", end="")
-                    time.sleep(1)"""
+                #progress_bar(Config.LENGTH_BAR)
+                for remaining in range(Config.LENGTH_BAR, 0, -1):
+                    minutes, seconds = divmod(remaining, 60)
+                    print(f"\r{Fore.YELLOW}{minutes:02d}:{seconds:02d} minutes{Style.RESET_ALL}", end="")
+                    time.sleep(1)
                     
                 print("\n")
 
@@ -909,6 +926,7 @@ if __name__ == "__main__":
         symbol='SHIB',
         entry_price=0.00001578,order_id ="MANUAL")"""
     trader = BinanceTradeExecutor(API_KEY, API_SECRET)
+    trader.wait_for_next_timeframe()
     trader.execute_trade_cycle()
    
    
