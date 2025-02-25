@@ -14,6 +14,7 @@ import logging
 import talib
 from chyper_pattern import CypherPattern, CypherPatternDetector
 from part_by_part import PartByPartStrategy
+from feci_indicator import FECIIndicator
 colorama.init()
 
 
@@ -84,6 +85,8 @@ class TrendStrategy:
         self.ema_reject = EMARejectStrategy()
         self.cypher_detector = CypherPatternDetector()
         self.part_strategy = PartByPartStrategy()
+        self.feci_indicator = FECIIndicator()
+        
     def update_daily_high(self, current_price: float):
         """Updates the daily high price"""
         self.daily_high = max(self.daily_high, current_price)
@@ -384,11 +387,9 @@ class TrendStrategy:
             self.logger.error(f"Ağırlıklı skor hesaplama hatası: {str(e)}")
             return 0, {}
     
-    def generate_signal(self, data: pd.DataFrame, data_4h=None) -> Dict:
+    def generate_signal(self, data: pd.DataFrame, data_4h: pd.DataFrame, data_50_mum: pd.DataFrame, data_200_mum: pd.DataFrame, data_500_mum: pd.DataFrame) -> Dict:
        
         try:
-            if len(data) < 1:
-                return "hold"
             # Dinamik hedef hesaplaması
             long_target, short_target = self.risk_manager.calculate_dynamic_target(data)
             
@@ -396,7 +397,6 @@ class TrendStrategy:
             if long_target is None or short_target is None:
                 self.logger.error("Hedef hesaplama başarısız")
                 return "hold"
-            # Check if data has at least one row
             
             current_price = float(data['close'].iloc[-1])
             # Part by part strateji kontrolü
@@ -404,7 +404,7 @@ class TrendStrategy:
         
                 # Satış kontrolü
                 
-   
+            
             self.update_daily_high(current_price)
             
             # EMA rejection kontrolü: Eğer aktif pozisyon varsa ve EMA rejection tetikleniyorsa, satış sinyali ver.
@@ -450,37 +450,37 @@ class TrendStrategy:
                 return "hold"
             
             # Teknik göstergeler ve analizler
-            rsi = data['rsi'].iloc[-1]
-            macd = data['macd'].iloc[-1]
-            macd_signal = data['macd_signal'].iloc[-1]
-            volume_spike = data['volume_spike'].iloc[-1]
+            rsi = data_50_mum['rsi'].iloc[-1]
+            macd = data_50_mum['macd'].iloc[-1]
+            macd_signal = data_50_mum['macd_signal'].iloc[-1]
+            volume_spike = data_50_mum['volume_spike'].iloc[-1]
             current_close = data['close'].iloc[-1]
             
             strong_signal_conditions = {
                         'rsi_oversold': rsi < 30,  # Güçlü aşırı satım
+                        
                         'fib_support': (
-                            current_price >= data['fib_62'].iloc[-1] *0.98 and  
-                            current_price <= data['fib_62'].iloc[-1] * 1.02  
+                            abs(current_price - data_200_mum['fib_62'].iloc[-1]) <= data_200_mum['fib_62'].iloc[-1] * Config.fib_tolerance
                         ),
-                        'supertrend_bullish': data['supertrend'].iloc[-1],  # Supertrend yükseliş sinyali
-                        'volume_confirmation': (data['volume'].iloc[-1] > data['volume'].rolling(20).mean().iloc[-1] * 1.5 and  (data['volume'].iloc[-1] < data['volume'].rolling(20).max().iloc[-1] * 0.8))  # Ani pump'ı filtrele  # Hacim teyidi
+                        'supertrend_bullish': data_200_mum['supertrend'].iloc[-1],  # Supertrend yükseliş sinyali
+                        'volume_confirmation': (data_200_mum['volume'].iloc[-1] > data_200_mum['volume'].rolling(20).mean().iloc[-1] * 1.5 and  (data_200_mum['volume'].iloc[-1] < data_200_mum['volume'].rolling(20).max().iloc[-1] * 0.8))  # Ani pump'ı filtrele  # Hacim teyidi
                     }
         
             
             # Kanal analizi
-            upper_line, lower_line = self.calculate_channel_lines(data)
-            predicted_price = self.predict_next_candle_price(data)
+            upper_line, lower_line = self.calculate_channel_lines(data_200_mum)
+            predicted_price = self.predict_next_candle_price(data_200_mum)
             channel_width = upper_line.iloc[-1] - lower_line.iloc[-1]
             channel_position = (current_price - lower_line.iloc[-1]) / channel_width
             near_lower = channel_position < 0.2
             near_upper = channel_position > 0.8
             
             # Divergence kontrolü
-            divergence = self.detect_divergence(data)
+            divergence = self.detect_divergence(data_50_mum)
             
             # Fibonacci destekleri
-            fib_support_38 = current_close >= data['fib_38'].iloc[-1]
-            fib_support_62 = current_close >= data['fib_62'].iloc[-1]
+            fib_support_38 = current_close >= data_500_mum['fib_38'].iloc[-1]
+            fib_support_62 = current_close >= data_500_mum['fib_62'].iloc[-1]
             
             # Trend analizi
             trend_alignment = self.check_trend_alignment(data)
@@ -503,7 +503,7 @@ class TrendStrategy:
                 # Teknik Satış Koşulları
                 rsi_sell_condition = rsi > Config.RSI_SELL
                 macd_sell_condition = macd < macd_signal
-                ema_sell_condition = current_price < data['ema_50'].iloc[-1]
+                ema_sell_condition = current_price < data_200_mum['ema_50'].iloc[-1]
                 trend_sell_condition = trend_alignment == 'bearish'
                 technical_sell = (rsi_sell_condition and macd_sell_condition and ema_sell_condition and trend_sell_condition and volume_spike and primary_trend == 'bearish')
                 price_prediction_check = current_price >= predicted_price > entry_price
@@ -513,9 +513,18 @@ class TrendStrategy:
                     return 'short'
             
             # ALIŞ KOŞULLARI
-            cypher_pattern = self.cypher_detector.detect_cypher(data)
-            cypher_condition = cypher_pattern is not None and cypher_pattern.confidence > 0.8
+            #data = self.feci_indicator.calculate(data)
             
+            
+            #feci_check = data['FECI'].iloc[-1] < Config.FECI_THRESHOLD  
+            
+            
+            cypher_pattern = self.cypher_detector.detect_cypher(data)
+            if not cypher_pattern:
+                print("Cypher pattern not found")
+            cypher_condition = cypher_pattern is not None and cypher_pattern.confidence > 0.6
+            if cypher_condition:
+                print("Cypher condition met")
             # eğer 4 saatlikte düşüş trendi kırılmış ve yükselişe geçmişse
             data_4h['ema_50'] = talib.EMA(data_4h['close'], timeperiod=50)
             data_4h['ema_200'] = talib.EMA(data_4h['close'], timeperiod=200)
@@ -530,15 +539,17 @@ class TrendStrategy:
             )
             supertrend_condition = data['supertrend'].iloc[-1]
             rsi_check = rsi < Config.RSI_BUY
+            adx_check = data['adx'].iloc[-1] > Config.ADX_THRESHOLD
             macd_momentum = (macd > macd_signal and 
                             abs(macd - macd_signal) > abs(data['macd'].iloc[-2] - data['macd_signal'].iloc[-2]))
             ema_conditions = (
-                abs(current_price - data['ema_50'].iloc[-1]) / data['ema_50'].iloc[-1] < 0.01 or
-                abs(current_price - data['ema_200'].iloc[-1]) / data['ema_200'].iloc[-1] < 0.015 or
-                data['ema_50'].iloc[-1] > data['ema_50'].iloc[-5]
+                abs(current_price - data_200_mum['ema_50'].iloc[-1]) / data_200_mum['ema_50'].iloc[-1] < 0.01 or
+                abs(current_price - data_200_mum['ema_200'].iloc[-1]) / data_200_mum['ema_200'].iloc[-1] < 0.015 or
+                data_200_mum['ema_50'].iloc[-1] > data_200_mum['ema_50'].iloc[-5]
             )
             forecast_condition = current_price < data['linear_reg_forecast'].iloc[-1]
             weights = [
+                 Config.ADX_s,
                 Config.RSI_DIVERGENCE_S,  # RSI/Divergence - en önemli momentum göstergesi
                 Config.MACD_VOLUME_S,  # MACD/Volume - momentum teyidi
                 Config.EMA_CONDITION_S,  # EMA conditions - trend göstergesi
@@ -549,10 +560,14 @@ class TrendStrategy:
                 Config.FORECAST_S,
                 Config.STRONG_SIGNAL_S,
                 Config.TREND_KIRILDI_4H_S,
-                Config.CYPHER_PATTERN_WEIGHT
+                Config.CYPHER_PATTERN_WEIGHT,
+               # Config.FECI_S,
+               
+                
                 
             ]
             conditions  = [
+                adx_check,
                 rsi_check or divergence,  
                 macd_momentum or volume_spike,  
                 ema_conditions,  
@@ -564,16 +579,18 @@ class TrendStrategy:
                 all(strong_signal_conditions.values()),
                 trend_kırıldı_4h,
                 cypher_condition
+                
                 ]
             # Ağırlıklı skor hesaplama
             weighted_score = sum(w * (1 if cond else 0) for w, cond in zip(weights, conditions))
-            if conditions[8]:
+            if conditions[9]:
                 weighted_score += 2.0
             
             max_possible_score = sum(weights)  # 7.7
             score_percentage = (weighted_score / max_possible_score) * 100
             print(f"\n{Fore.CYAN}=== Weighted Buy Score: {score_percentage:.2f}% ==={Style.RESET_ALL}")
             condition_names = [
+                "ADX Condition",
                 "RSI/Divergence",
                 "MACD/Volume",
                 "EMA Conditions",
@@ -584,7 +601,8 @@ class TrendStrategy:
                 "Forecast",
                 "Strong Signal",
                 "Trend_Kırıldı_4h",
-                "Cypher Condition"
+                "Cypher Condition",
+                #"FECI Condition"
             ]
             for name, condition, weight in zip(condition_names, conditions, weights):
                 status = '✓' if condition else '✗'
@@ -616,7 +634,7 @@ class TrendStrategy:
                     return "hold"  # Risk/Ödül oranı yeterli değilse "hold" döndür
             #Hem agresif hem de konservatif stratejileri birleştiriyor
             
-            elif 10 < score_percentage < 55 and current_price <= four_hour_low + threshold:
+            elif 10 < score_percentage < 55 and current_price <= four_hour_low + threshold and Config.PART_SELL:
                 buy_signal = self.part_strategy.check_buy_conditions(current_price,four_hour_low=True)
                 if buy_signal["should_buy"]:
                     print(f"\n{Fore.YELLOW}📉 4 saatlik destek seviyesine yakın, alım fırsatı olabilir:{Style.RESET_ALL} {current_price}")
