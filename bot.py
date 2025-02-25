@@ -70,9 +70,7 @@ class BinanceTradeExecutor:
         # Add missing variables for pending orders
         self.pending_sell_order = None
         self.sell_order_time = None
-        
         self.last_sell_condition = None
-        
         self.stop_loss_messaging = StopLossMessaging()
         self.part_strategy = PartByPartStrategy()
         # List to track successful trades
@@ -211,13 +209,6 @@ class BinanceTradeExecutor:
             abs(current_close - data['ema_200'].iloc[-1]) / data['ema_200'].iloc[-1] < 0.015 or
             data['ema_50'].iloc[-1] > data['ema_50'].iloc[-5]
         )
-
-        # Display Buy Conditions
-        """print(f"\n{Fore.CYAN}Buy Conditions Status:{Style.RESET_ALL}")
-        rsi_buy_check = data['rsi'].iloc[-1] < Config.RSI_BUY
-        print(f"1. RSI < {Config.RSI_BUY}: {Fore.GREEN if rsi_buy_check else Fore.RED}✓ (Current: {data['rsi'].iloc[-1]:.2f}){Style.RESET_ALL}")
-        print(f"2. MACD Momentum or Volume Spike: {Fore.GREEN if (macd_momentum or volume_spike) else Fore.RED}✓{Style.RESET_ALL}")
-        print(f"3. EMA Conditions: {Fore.GREEN if ema_conditions else Fore.RED}✓{Style.RESET_ALL}")"""
 
         # Display Sell Conditions
         if self.position_status == 'ready_to_sell':
