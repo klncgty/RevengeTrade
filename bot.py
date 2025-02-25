@@ -80,23 +80,7 @@ class BinanceTradeExecutor:
           
         # Load active position at startup
         self.load_active_position()
-        
-    """def load_active_position(self):
-        Database'den aktif pozisyonu yükler
-        position = self.db.get_active_position(Config.SYMBOL)
-        if position and isinstance(position, dict):
-            self.active_position = position
-            self.peak_price = position['entry_price']
-            self.position_status = 'ready_to_sell'
-            print(f"\n{Fore.CYAN}Loaded active position:{Style.RESET_ALL}")
-            print(f"Entry Price: {position['entry_price']:.8f}")
-            print(f"Quantity: {position['quantity']:.8f}")
-            print(f"Stop Loss: {position['stop_loss']:.8f}")
-            print(f"Take Profit: {position['take_profit']:.8f}")
-        else:
-            print(f"\n{Fore.YELLOW}No active position found. Starting fresh.{Style.RESET_ALL}")  
-            self.active_position = None
-            self.peak_price = None"""
+    
     def load_active_position(self):
         """Database'den aktif pozisyonu yükler"""
         try:
