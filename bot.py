@@ -35,7 +35,7 @@ from coin_finder import CoinAnalyzer
 from advanced_stoploss import AdvancedStopLossManager
 from stop_loss_print import StopLossMessaging
 from part_by_part import PartByPartStrategy
-
+from stop_avi_2 import StopAviDedektoru
 load_dotenv()
 
 colorama.init()
@@ -70,15 +70,34 @@ class BinanceTradeExecutor:
         # Add missing variables for pending orders
         self.pending_sell_order = None
         self.sell_order_time = None
+        
         self.last_sell_condition = None
+        self.stop_avi = StopAviDedektoru()
         self.stop_loss_messaging = StopLossMessaging()
         self.part_strategy = PartByPartStrategy()
         # List to track successful trades
         self.successful_trades = []
-          
+        self.BUY_CONDITIONS_LIMIT = Config.BUY_CONDITIONS_LIMIT
+        self.last_processed_date = datetime.now().date()
         # Load active position at startup
         self.load_active_position()
-    
+        
+    """def load_active_position(self):
+        Database'den aktif pozisyonu yükler
+        position = self.db.get_active_position(Config.SYMBOL)
+        if position and isinstance(position, dict):
+            self.active_position = position
+            self.peak_price = position['entry_price']
+            self.position_status = 'ready_to_sell'
+            print(f"\n{Fore.CYAN}Loaded active position:{Style.RESET_ALL}")
+            print(f"Entry Price: {position['entry_price']:.8f}")
+            print(f"Quantity: {position['quantity']:.8f}")
+            print(f"Stop Loss: {position['stop_loss']:.8f}")
+            print(f"Take Profit: {position['take_profit']:.8f}")
+        else:
+            print(f"\n{Fore.YELLOW}No active position found. Starting fresh.{Style.RESET_ALL}")  
+            self.active_position = None
+            self.peak_price = None"""
     def load_active_position(self):
         """Database'den aktif pozisyonu yükler"""
         try:
@@ -210,6 +229,13 @@ class BinanceTradeExecutor:
             data['ema_50'].iloc[-1] > data['ema_50'].iloc[-5]
         )
 
+        # Display Buy Conditions
+        """print(f"\n{Fore.CYAN}Buy Conditions Status:{Style.RESET_ALL}")
+        rsi_buy_check = data['rsi'].iloc[-1] < Config.RSI_BUY
+        print(f"1. RSI < {Config.RSI_BUY}: {Fore.GREEN if rsi_buy_check else Fore.RED}✓ (Current: {data['rsi'].iloc[-1]:.2f}){Style.RESET_ALL}")
+        print(f"2. MACD Momentum or Volume Spike: {Fore.GREEN if (macd_momentum or volume_spike) else Fore.RED}✓{Style.RESET_ALL}")
+        print(f"3. EMA Conditions: {Fore.GREEN if ema_conditions else Fore.RED}✓{Style.RESET_ALL}")"""
+
         # Display Sell Conditions
         if self.position_status == 'ready_to_sell':
             print(f"\n{Fore.CYAN}Sell Conditions Status:{Style.RESET_ALL}")
@@ -262,8 +288,15 @@ class BinanceTradeExecutor:
         retry_delay = 5
         for attempt in range(max_retries):
             try:
+                now = datetime.now()
+                weekday = now.weekday()  # Pazartesi = 0 ... Pazar = 6
+                hour = now.hour
+                if Config.HAFTA_SONU_STRATEGY == True:
+                    if (weekday == 4 and hour >= 20) or (weekday in [5, 6]) or (weekday == 0 and hour < 5):
+                            interval = Config.TIMEFRAME_HAFTASONU
                 symbol_full = f"{symbol}USDT"
-                print(f"{Fore.YELLOW}Fetching market data for {symbol_full}...{Style.RESET_ALL}")
+                if attempt == 0:
+                   print(f"{Fore.YELLOW}Fetching market data for {symbol_full}...{Style.RESET_ALL}")
                 klines = self.client.get_klines(
                     symbol=symbol_full,
                     interval=interval,
@@ -278,7 +311,8 @@ class BinanceTradeExecutor:
                 for col in ['open', 'high', 'low', 'close', 'volume']:
                     df[col] = pd.to_numeric(df[col], errors='coerce')
                 current_price = df['close'].iloc[-1]
-                print(f"{Fore.GREEN}Market data fetched successfully. Current {symbol_full} Price: {Fore.CYAN}{current_price:.8f}{Style.RESET_ALL}")
+                if attempt == 0:
+                   print(f"{Fore.GREEN}Market data fetched successfully. Current {symbol_full} Price: {Fore.CYAN}{current_price:.8f}{Style.RESET_ALL}")
                 
                 #csv_filename = f"historical_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
                 
@@ -486,7 +520,6 @@ class BinanceTradeExecutor:
                         print(f"\033[1;32m🔥🔥Orta hedefli kar oranına ulaşıldı🎯: {profit_percentage:.2f}% (target: {Config.PROFIT_TARGET}%)\033[0m")
                     elif profit_percentage > 0.5:
                         print(f"\033[1;32m🔥Düşük hedefli kar oranına ulaşıldı🎯: {profit_percentage:.2f}% (target: {Config.PROFIT_TARGET}%)\033[0m")
-                    
                     self.last_sell_condition = 'profit_target'
                     return 'SELL'  # Profit target reached
             
@@ -522,7 +555,7 @@ class BinanceTradeExecutor:
             # Her fiyat güncellemesinde kontrol et
             self.stop_loss_manager = AdvancedStopLossManager(
                 initial_stop_loss=self.active_position['stop_loss'],
-                trailing_percentage=1.0
+                trailing_percentage=1.5
             )
             triggered, message = self.stop_loss_manager.check_stop_loss(
                 current_price=current_price,
@@ -531,15 +564,17 @@ class BinanceTradeExecutor:
             )
 
             if triggered:
-                print(self.stop_loss_messaging.generate_message(
-                    status='STOP_LOSS',
-                    current_price=current_price,
-                    stop_loss_price=self.stop_loss_manager.current_stop_loss,
-                    entry_price=self.active_position['entry_price'],
-                    current_data=current_data,
-                    reason=message
-                ))
-                return 'SELL'
+               
+                   print(self.stop_loss_messaging.generate_message(
+                       status='STOP_LOSS',
+                       current_price=current_price,
+                       stop_loss_price=self.stop_loss_manager.current_stop_loss,
+                       entry_price=self.active_position['entry_price'],
+                       current_data=current_data,
+                       reason=message
+                   ))
+                   return 'SELL'
+         
             else:
                 print(self.stop_loss_messaging.generate_message(
                     status='NO_STOP_LOSS',
@@ -555,9 +590,8 @@ class BinanceTradeExecutor:
                 position_type='long',
                 peak_price=self.peak_price
             ):
-                print(f"\033[91mTakip eden stop tetiklendi! SATIŞ sinyali gönderiliyor.\033[0m")
-                return 'SELL'
-
+                   print(f"\033[91mTakip eden stop tetiklendi! SATIŞ sinyali gönderiliyor.\033[0m")
+                   return 'SELL'
             return None
 
         except Exception as e:
@@ -610,7 +644,6 @@ class BinanceTradeExecutor:
             if order:
                 exit_price = float(order['fills'][0]['price'])
                 profit = (exit_price - self.active_position['entry_price']) * self.active_position['quantity']
-                print(f"{Fore.GREEN}=== Satış Gerçekleşti! Kar Oranı: {trade_data['return_pct']:.2f}% 💰 ==={Style.RESET_ALL}")
                 # EMA rejection durumunu sıfırla
                 self.ema_reject.reset_rejection_count()
                 self.trade_count += 1
@@ -638,6 +671,7 @@ class BinanceTradeExecutor:
                     'stop_loss': self.active_position['stop_loss'],
                     'take_profit': self.active_position['take_profit']
                 }
+                print(f"{Fore.GREEN}=== Satış Gerçekleşti! Kar Oranı: {trade_data['return_pct']:.2f}% 💰 ==={Style.RESET_ALL}")
                 self.print_trade_summary(trade_data)
                 self.logger.log_transaction(trade_data)
                 self.performance_tracker.log_trade(
@@ -674,20 +708,32 @@ class BinanceTradeExecutor:
     def wait_for_next_timeframe(self):
         """Botun tam timeframe (5, 15, 30 dk) dilimlerine senkronize olmasını sağlar."""
         now = datetime.now()
+        weekday = now.weekday()  # Pazartesi = 0 ... Pazar = 6
+        hour = now.hour
+        if Config.HAFTA_SONU_STRATEGY == True:
+            if Config.HAFTA_SONU_STRATEGY == True:
+                if (weekday == 4 and hour >= 20) or (weekday in [5, 6]) or (weekday == 0 and hour < 5):
+                    Config.TIME_SYNC = Config.TIME_SYNC_HAFTASONU
         minutes_to_wait = Config.TIME_SYNC - (now.minute % Config.TIME_SYNC)  # Kaç dakika beklemeli?
         next_run_time = now + timedelta(minutes=minutes_to_wait)
         next_run_time = next_run_time.replace(second=0, microsecond=0)  # Tam dakikaya yuvarla
         wait_seconds = (next_run_time - now).total_seconds()
         
         print(f"Bot {next_run_time.strftime('%H:%M:%S')}'de çalışacak...")
-        time.sleep(wait_seconds)
+        # Geri sayım
+        for remaining in range(wait_seconds, 0, -1):
+            minutes, seconds = divmod(remaining, 60)
+            print(f"\r{Fore.YELLOW}Yeni döngüye kalan: {minutes:02d}:{seconds:02d}{Style.RESET_ALL}", end="")
+            time.sleep(1)
+        print()  
     
     def execute_trade_cycle(self):
         """Ana ticaret döngüsünü yürütür ve veritabanı güncellemelerini yapar."""
         print(f"{Fore.CYAN}Trading Bot Başlatılıyor 🔥🔥🔥{Style.RESET_ALL}")
         print(f"Trading {Config.SYMBOL}USDT on {Config.TIMEFRAME} timeframe")
         print(f"Risk per trade: {Config.RISK_PER_TRADE*100}%")
-        
+        # İlk çalıştırmada zaman dilimine senkronize ol
+        self.wait_for_next_timeframe()
         while True:
             try:
                 # Pozisyon durumunu kontrol et
@@ -850,18 +896,26 @@ class BinanceTradeExecutor:
                     else:
                         print("[DEBUG] No active position and no coin balance found.")
 
-                # Sonraki döngü için bekle
-                minute = int(Config.LENGTH_BAR / 60)
-                print(f"\n{Fore.YELLOW}Gelecek güncellemeye:{minute} dakika var. {Style.RESET_ALL}")
-                print(f"\n{Fore.BLUE}🔥Toplam trade sayısı:⚡ {self.trade_count} ⚡  {Style.RESET_ALL}")
+                now = datetime.now()
+                weekday = now.weekday()  # Pazartesi = 0 ... Pazar = 6
+                hour = now.hour
+                if Config.HAFTA_SONU_STRATEGY == True:
+                    if (weekday == 4 and hour >= 20) or (weekday in [5, 6]) or (weekday == 0 and hour < 5):
+                                    Config.LENGTH_BAR = Config.LENGTH_BAR_HAFTASONU
 
+                # Sonraki döngü için bekle
+                """minute = int(Config.LENGTH_BAR / 60)
+                print(f"\n{Fore.YELLOW}Gelecek güncellemeye:{minute} dakika var. {Style.RESET_ALL}")"""
+                print(f"\n{Fore.BLUE}🔥Toplam trade sayısı:⚡ {self.trade_count} ⚡  {Style.RESET_ALL}")
+                # Bir sonraki zaman dilimine kadar bekle ve geri sayım yap
+                self.wait_for_next_timeframe()
                 #progress_bar(Config.LENGTH_BAR)
-                for remaining in range(Config.LENGTH_BAR, 0, -1):
+                """for remaining in range(Config.LENGTH_BAR, 0, -1):
                     minutes, seconds = divmod(remaining, 60)
                     print(f"\r{Fore.YELLOW}{minutes:02d}:{seconds:02d} minutes{Style.RESET_ALL}", end="")
                     time.sleep(1)
                     
-                print("\n")
+                print("\n")"""
 
             except Exception as e:
                 print(f"{Fore.RED}Error in trade cycle: {str(e)}{Style.RESET_ALL}")
@@ -871,37 +925,8 @@ class BinanceTradeExecutor:
 if __name__ == "__main__":
     API_KEY = os.getenv("API_KEY_")
     API_SECRET = os.getenv("API_SECRET_")
-    """coins = ["SHIB", "BEAMX", "NOT", "SLP", "HOT","BTTC","PEPE","XEC","SPELL","COS","RVN"]
-    analyzer = CoinAnalyzer(API_KEY, API_SECRET, coins)
-    try:
-        response = analyzer.analyze_trends()
-        print("\n")
-        print("Analiz sonucu:", "\033[92m", response.content, "\033[0m")
-    except Exception as e:
-        print("An error occurred:", e)
-        print("====================================")
-        print("\n")
-    print("Coinler:", coins)
-    print("\n")
-    print("====================================")
-    print("\n")
-    selected_coin = input("Bu  analizden sonra hangi coin ile işlem yapmak istersiniz? ")
-    
-    Config.SYMBOL = selected_coin.upper()"""
-    
-   
-    """position_manager = InitialPositionManager(
-    client=trader.client,
-    db=trader.db,
-    get_symbol_balance=trader.get_symbol_balance
-)
-
-# Manuel pozisyon ekle
-    position_manager.add_manual_position(
-        symbol='SHIB',
-        entry_price=0.00001578,order_id ="MANUAL")"""
+ 
     trader = BinanceTradeExecutor(API_KEY, API_SECRET)
-    trader.wait_for_next_timeframe()
     trader.execute_trade_cycle()
    
    
